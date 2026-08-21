@@ -2001,9 +2001,8 @@ body,
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 0 8px 6px;
-  border-bottom: 1px solid var(--border);
 }
 
 .ai-status {
@@ -2092,6 +2091,8 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* on the message list so it shows whether or not the controls row renders */
+  border-top: 1px solid var(--border);
 }
 
 .ai-empty {

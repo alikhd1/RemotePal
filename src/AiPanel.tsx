@@ -20,6 +20,7 @@ import {
   providerDef,
 } from "./aiConfig";
 import { Select } from "./Dropdown";
+import { Sparkles } from "lucide-react";
 import Markdown from "./Markdown";
 
 // Anthropic content blocks, stored verbatim.
@@ -433,15 +434,8 @@ function AiPanel({ sessionId, allSessions }: Props) {
         </span>
       </div>
 
-      <div className="ai-controls">
-        <Select
-          size="sm"
-          title="AI provider"
-          value={provider}
-          options={getProviders().map((p) => ({ value: p.id, label: p.label }))}
-          onChange={switchProvider}
-        />
-        {allSessions.length > 1 && (
+      {allSessions.length > 1 && (
+        <div className="ai-controls">
           <Select
             size="sm"
             align="right"
@@ -453,8 +447,8 @@ function AiPanel({ sessionId, allSessions }: Props) {
             }))}
             onChange={(v) => setTarget(Number(v))}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="ai-msgs">
         {messages.length === 0 && !live.text && !live.thinking && (
@@ -580,6 +574,25 @@ function AiPanel({ sessionId, allSessions }: Props) {
           }}
         />
         <div className="ai-input-actions">
+          <Select
+            size="sm"
+            title="AI provider"
+            value={provider}
+            options={getProviders().map((p) => ({
+              value: p.id,
+              label: p.label,
+              icon: <Sparkles size={12} />,
+            }))}
+            onChange={switchProvider}
+          />
+          <label className="ai-attach" title="Attach recent terminal output">
+            <input
+              type="checkbox"
+              checked={attachOutput}
+              onChange={(e) => setAttachOutput(e.currentTarget.checked)}
+            />
+            output
+          </label>
           {busy ? (
             <button className="link-btn" onClick={stop}>
               Stop
@@ -593,14 +606,6 @@ function AiPanel({ sessionId, allSessions }: Props) {
               Send
             </button>
           )}
-          <label className="ai-attach" title="Attach recent terminal output">
-            <input
-              type="checkbox"
-              checked={attachOutput}
-              onChange={(e) => setAttachOutput(e.currentTarget.checked)}
-            />
-            output
-          </label>
         </div>
       </div>
     </div>
