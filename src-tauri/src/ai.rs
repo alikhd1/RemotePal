@@ -36,7 +36,38 @@ const DEFAULT_MODEL_GAPGPT: &str = "gpt-4o";
 pub struct AiState {
     /// turn_id -> cancel flag, polled by the streaming loop each chunk
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// provider id -> API key, read from the OS credential store once per
+    /// app run. macOS prompts for Keychain access on every read, so
+    /// re-reading per chat turn asked the user for permission on every
+    /// message; keeping it here makes that at most one prompt per launch.
+    keys: Mutex<HashMap<String, String>>,
     client: reqwest::Client,
+}
+
+impl AiState {
+    /// The provider's key, from memory if we've already read it.
+    fn cached_key(&self, provider: &str) -> Option<String> {
+        if let Some(k) = self.keys.lock().unwrap().get(provider) {
+            return Some(k.clone());
+        }
+        let k = key_get(provider)?;
+        self.keys
+            .lock()
+            .unwrap()
+            .insert(provider.to_string(), k.clone());
+        Some(k)
+    }
+
+    fn remember_key(&self, provider: &str, key: &str) {
+        self.keys
+            .lock()
+            .unwrap()
+            .insert(provider.to_string(), key.to_string());
+    }
+
+    fn forget_key(&self, provider: &str) {
+        self.keys.lock().unwrap().remove(provider);
+    }
 }
 
 impl Default for AiState {
@@ -50,6 +81,7 @@ impl Default for AiState {
             .unwrap_or_default();
         AiState {
             cancels: Mutex::new(HashMap::new()),
+            keys: Mutex::new(HashMap::new()),
             client,
         }
     }
@@ -809,25 +841,33 @@ fn anthropic_tools_to_openai(tools: &[Value]) -> Vec<Value> {
 /// `Some("")` clears, `None` leaves untouched. Returns whether a key is
 /// now present. Never returns the secret.
 #[tauri::command]
-pub fn ai_key_save(key: Option<String>, provider: Option<String>) -> Result<bool, String> {
+pub fn ai_key_save(
+    state: State<'_, AiState>,
+    key: Option<String>,
+    provider: Option<String>,
+) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     match key {
         Some(k) if !k.is_empty() => {
             key_set(&provider, &k)?;
+            // keep the in-memory copy in step so the next chat turn doesn't
+            // have to go back to the credential store
+            state.remember_key(&provider, &k);
             Ok(true)
         }
         Some(_) => {
             key_del(&provider);
+            state.forget_key(&provider);
             Ok(false)
         }
-        None => Ok(key_get(&provider).is_some()),
+        None => Ok(state.cached_key(&provider).is_some()),
     }
 }
 
 #[tauri::command]
-pub fn ai_key_status(provider: Option<String>) -> Result<bool, String> {
+pub fn ai_key_status(state: State<'_, AiState>, provider: Option<String>) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
-    Ok(key_get(&provider).is_some())
+    Ok(state.cached_key(&provider).is_some())
 }
 
 #[tauri::command]
@@ -858,7 +898,7 @@ pub async fn ai_chat(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| default_model(&kind).to_string());
 
-    let api_key = match key_get(&provider_id) {
+    let api_key = match state.cached_key(&provider_id) {
         Some(k) => k,
         // keyless providers send no Authorization header at all
         None if requires_key == Some(false) => String::new(),
