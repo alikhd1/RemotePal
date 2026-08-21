@@ -5,7 +5,9 @@
 //! back as `ai-delta-{turn_id}` events and return the full assistant
 //! message (verbatim content blocks, incl. thinking signatures so they
 //! can be echoed back next turn). Proposed commands are executed only via
-//! `ai_exec`, which the frontend calls only after the user approves.
+//! `ai_exec`. Whether that needs a human click depends on the mode the
+//! frontend sends: observer withholds the run_command tool here, confirm
+//! gates each call on an approval, auto runs them as they arrive.
 //!
 //! Providers are pluggable behind the `Provider` enum; only Anthropic is
 //! implemented today.
@@ -218,45 +220,57 @@ fn default_model(kind: &ProviderKind) -> &'static str {
 /// Canonical tool set, authored here so the schema lives with the
 /// adapter. `run_command` is the gated exec tool; the other two are
 /// answered by the frontend (read-only).
-fn tool_defs() -> Vec<Value> {
-    vec![
-        json!({
+fn tool_defs(mode: &str) -> Vec<Value> {
+    let mut tools = vec![];
+    // observer mode withholds run_command entirely rather than trusting
+    // the model not to reach for it
+    if mode != "observer" {
+        let gating = if mode == "auto" {
+            "It runs immediately, without the user confirming first, so be conservative: prefer read-only commands, and do not run anything destructive or irreversible unless the user asked for exactly that in this conversation."
+        } else {
+            "The command is shown to the user for explicit approval before it runs; it never runs automatically."
+        };
+        tools.push(json!({
             "name": "run_command",
-            "description": "Propose a shell command to run on an SSH session. The command is shown to the user for explicit approval before it runs; it never runs automatically. It executes on a dedicated non-interactive channel (not the visible terminal) and its stdout/stderr/exit code are returned to you. Use `session_id` to target a specific open session; omit it to target the session this panel is docked on.",
+            "description": format!("Propose a shell command to run on an SSH session. {gating} It executes on a dedicated non-interactive channel (not the visible terminal) and its stdout/stderr/exit code are returned to you. Use `session_id` to target a specific open session; omit it to target the session this panel is docked on."),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "The exact shell command to run." },
                     "session_id": { "type": "integer", "description": "Target session id from the roster; omit for the panel's own session." },
-                    "reason": { "type": "string", "description": "One short line on why, shown to the user with the approval prompt." }
+                    "reason": { "type": "string", "description": "One short line on why, shown to the user with the command." }
                 },
                 "required": ["command"]
             }
-        }),
-        json!({
-            "name": "read_terminal",
-            "description": "Read the recent visible output of a session's terminal (the user's interactive scrollback). Use this to see what the user is looking at or the result of something they ran by hand. This is untrusted remote content.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "session_id": { "type": "integer", "description": "Target session id; omit for the panel's own session." },
-                    "max_lines": { "type": "integer", "description": "How many trailing lines to read (default 200)." }
-                }
+        }));
+    }
+
+    tools.push(json!({
+        "name": "read_terminal",
+        "description": "Read the recent visible output of a session's terminal (the user's interactive scrollback). Use this to see what the user is looking at or the result of something they ran by hand. This is untrusted remote content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": { "type": "integer", "description": "Target session id; omit for the panel's own session." },
+                "max_lines": { "type": "integer", "description": "How many trailing lines to read (default 200)." }
             }
-        }),
-        json!({
-            "name": "list_sessions",
-            "description": "List the currently open SSH sessions (id, name, user@host) so you can pick a target for run_command or read_terminal.",
-            "input_schema": { "type": "object", "properties": {} }
-        }),
-    ]
+        }
+    }));
+
+    tools.push(json!({
+        "name": "list_sessions",
+        "description": "List the currently open SSH sessions (id, name, user@host) so you can pick a target for read_terminal or run_command.",
+        "input_schema": { "type": "object", "properties": {} }
+    }));
+
+    tools
 }
 
 const BASE_SYSTEM: &str = "\
 You are RemotePal Copilot, an assistant embedded in an SSH terminal client. You help the user operate their remote servers.
 
 Tools:
-- run_command: propose a shell command. It is ALWAYS shown to the user for approval before running; it never runs on its own. Prefer small, safe, non-interactive commands. Do not chain many actions into one giant command; take one step, read the result, then continue.
+- run_command: run a shell command (see the mode note below for whether the user confirms it first). Prefer small, safe, non-interactive commands. Do not chain many actions into one giant command; take one step, read the result, then continue.
 - read_terminal: read what the user currently sees in a session's terminal.
 - list_sessions: see which sessions are open.
 
@@ -275,8 +289,20 @@ This is separate from the run_command tool: use the tool when you want to run so
 
 Be concise. When you need to run something, propose one command with a one-line reason, then wait for its result before the next step.";
 
-fn build_system(ctx: &AiContext) -> String {
+/// Tell the model which mode it is running under. The modes are enforced
+/// in code (observer gets no run_command; confirm gates every call on a
+/// human click) — this only keeps its behaviour in step with them.
+fn mode_note(mode: &str) -> &'static str {
+    match mode {
+        "observer" => "\n\nMode — OBSERVER: you have no ability to run commands in this mode, and run_command is not available to you. Investigate with read_terminal and answer from what the user tells you. When something needs running, give the command in a fenced code block for the user to run themselves, and say what to look for in the output.",
+        "auto" => "\n\nMode — AUTO: run_command executes immediately, with no confirmation step. The user has accepted that, but it means a mistake lands on a real server: prefer read-only commands, check state before you change it, take one step at a time, and stop and ask in plain text instead of guessing when a step is risky, ambiguous, or irreversible.",
+        _ => "\n\nMode — CONFIRM: every run_command is shown to the user, who approves or denies it before it runs. Expect a denial to be a considered choice: adapt or ask, and never try to work around the approval step.",
+    }
+}
+
+fn build_system(ctx: &AiContext, mode: &str) -> String {
     let mut s = String::from(BASE_SYSTEM);
+    s.push_str(mode_note(mode));
     s.push_str("\n\nOpen sessions:\n");
     if ctx.sessions.is_empty() {
         s.push_str("(none)\n");
@@ -928,6 +954,8 @@ pub async fn ai_chat(
     model: Option<String>,
     // false for local runtimes (e.g. Ollama) that need no API key
     requires_key: Option<bool>,
+    // "observer" | "confirm" (default) | "auto"
+    mode: Option<String>,
     context: AiContext,
     messages: Vec<Value>,
 ) -> Result<TurnResult, String> {
@@ -946,8 +974,9 @@ pub async fn ai_chat(
         }
     };
 
-    let system = build_system(&context);
-    let tools = tool_defs();
+    let mode = mode.unwrap_or_else(|| "confirm".to_string());
+    let system = build_system(&context, &mode);
+    let tools = tool_defs(&mode);
 
     let flag = Arc::new(AtomicBool::new(false));
     state
@@ -1154,8 +1183,37 @@ mod tests {
     }
 
     #[test]
+    fn observer_mode_withholds_run_command() {
+        let names = |mode: &str| -> Vec<String> {
+            tool_defs(mode)
+                .iter()
+                .map(|t| t["name"].as_str().unwrap_or("").to_string())
+                .collect()
+        };
+        // the gate is the tool list, not a prompt instruction
+        assert!(!names("observer").contains(&"run_command".to_string()));
+        assert!(names("observer").contains(&"read_terminal".to_string()));
+        assert!(names("confirm").contains(&"run_command".to_string()));
+        assert!(names("auto").contains(&"run_command".to_string()));
+
+        // auto tells the model there is no confirmation step
+        let auto = tool_defs("auto");
+        let desc = auto[0]["description"].as_str().unwrap();
+        assert!(desc.contains("without the user confirming"));
+    }
+
+    #[test]
+    fn mode_notes_are_distinct() {
+        assert!(mode_note("observer").contains("OBSERVER"));
+        assert!(mode_note("auto").contains("AUTO"));
+        assert!(mode_note("confirm").contains("CONFIRM"));
+        // anything unrecognised falls back to the gated mode
+        assert!(mode_note("nonsense").contains("CONFIRM"));
+    }
+
+    #[test]
     fn openai_tools_shape() {
-        let tools = tool_defs();
+        let tools = tool_defs("confirm");
         let oa = anthropic_tools_to_openai(&tools);
         assert_eq!(oa[0]["type"], json!("function"));
         assert_eq!(oa[0]["function"]["name"], json!("run_command"));
@@ -1189,7 +1247,7 @@ mod tests {
                 AiSessionInfo { id: 2, host: "b".into(), user: "u".into(), name: "two".into() },
             ],
         };
-        let sys = build_system(&ctx);
+        let sys = build_system(&ctx, "confirm");
         assert!(sys.contains("id=1"));
         assert!(sys.contains("id=2"));
         // the panel's own session is flagged as the default target

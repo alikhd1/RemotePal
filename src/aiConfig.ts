@@ -99,6 +99,23 @@ const BUILTINS: ProviderDef[] = [
   },
 ];
 
+/// How much the Copilot may do on its own.
+/// - observer: no run_command tool at all; it suggests, you run
+/// - confirm:  every command needs an explicit Approve (default)
+/// - auto:     commands run as soon as the model asks
+export type AiMode = "observer" | "confirm" | "auto";
+
+const MODE_KEY = "remotepal-ai-mode";
+
+export function getMode(): AiMode {
+  const m = localStorage.getItem(MODE_KEY);
+  return m === "observer" || m === "auto" ? m : "confirm";
+}
+
+export function setMode(mode: AiMode): void {
+  localStorage.setItem(MODE_KEY, mode);
+}
+
 const PROVIDER_KEY = "remotepal-ai-provider";
 const CUSTOM_KEY = "remotepal-ai-providers";
 const MODEL_KEY = (provider: string) => `remotepal-ai-model-${provider}`;

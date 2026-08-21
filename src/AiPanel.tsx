@@ -2,7 +2,9 @@
 // the agent loop turn-by-turn: the backend `ai_chat` command streams
 // assistant text (as `ai-delta-{turnId}` events) and returns the full
 // assistant message; the model proposes commands via a `run_command`
-// tool that ALWAYS requires the user to approve before `ai_exec` runs it.
+// tool whose gating depends on the mode — observer (the tool is not even
+// offered), confirm (an explicit Approve per command, the default), or
+// auto (run as soon as the model asks).
 // read_terminal / list_sessions are read-only and answered here from the
 // live xterm buffers. All content blocks are stored and re-sent verbatim
 // so thinking-block signatures survive multi-turn (an Opus 5 requirement).
@@ -19,16 +21,22 @@ import {
   getProviders,
   getModel,
   providerDef,
+  getMode,
+  setMode,
+  type AiMode,
 } from "./aiConfig";
 import { Select } from "./Dropdown";
 import {
   Bookmark,
   Check,
+  Eye,
   KeyRound,
   RotateCw,
   SendHorizontal,
+  ShieldCheck,
   Square,
   X,
+  Zap,
 } from "lucide-react";
 import ProviderIcon from "./ProviderIcon";
 import Markdown from "./Markdown";
@@ -87,6 +95,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
   const [attachOutput, setAttachOutput] = useState(false);
   const [target, setTarget] = useState<number>(sessionId);
   const [provider, setProviderState] = useState<string>(getProvider());
+  const [mode, setModeState] = useState<AiMode>(getMode());
   const [snippetFor, setSnippetFor] = useState<{
     command: string;
     name: string;
@@ -113,6 +122,8 @@ function AiPanel({ sessionId, allSessions }: Props) {
   allSessionsRef.current = allSessions;
   const providerRef = useRef(provider);
   providerRef.current = provider;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   targetRef.current = target;
 
@@ -213,6 +224,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
         baseUrl: def.baseUrl,
         model: getModel(pid),
         requiresKey: def.requiresKey !== false,
+        mode: modeRef.current,
         context: {
           panel_session_id: targetRef.current,
           sessions: allSessionsRef.current.map((s) => ({
@@ -304,9 +316,19 @@ function AiPanel({ sessionId, allSessions }: Props) {
       return;
     }
 
-    // at least one command needs approval — suspend the loop
     autoRoundsRef.current = 0;
     pendingRef.current = { autoResults, cmds, results: new Map() };
+
+    // auto mode: no human gate — run them and let the loop continue
+    if (modeRef.current === "auto") {
+      setPending([]);
+      for (const c of cmds) {
+        await approve(c);
+      }
+      return;
+    }
+
+    // otherwise suspend the loop until each one is answered
     setPending(cmds);
     setStatus("awaiting_approval");
   }
@@ -694,6 +716,36 @@ function AiPanel({ sessionId, allSessions }: Props) {
           }}
         />
         <div className="ai-input-actions">
+          <Select
+            size="sm"
+            title="How much the Copilot may do on its own"
+            value={mode}
+            options={[
+              {
+                value: "observer",
+                label: "Observer",
+                icon: <Eye size={13} />,
+              },
+              {
+                value: "confirm",
+                label: "Confirm",
+                icon: <ShieldCheck size={13} />,
+              },
+              { value: "auto", label: "Auto", icon: <Zap size={13} /> },
+            ]}
+            onChange={(v) => {
+              const m = v as AiMode;
+              setMode(m);
+              setModeState(m);
+              setNotice(
+                m === "auto"
+                  ? "Auto mode: commands will run without asking."
+                  : m === "observer"
+                    ? "Observer mode: the Copilot can look, but not run anything."
+                    : null,
+              );
+            }}
+          />
           <Select
             size="sm"
             title="AI provider"
