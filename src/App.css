@@ -964,6 +964,17 @@ body,
   cursor: pointer;
 }
 
+.files-inputrow button.danger {
+  background: var(--danger);
+}
+
+.files-confirm-text {
+  flex: 1;
+  align-self: center;
+  font-size: 12px;
+  color: var(--fg);
+}
+
 .files-list {
   flex: 1;
   min-height: 0;

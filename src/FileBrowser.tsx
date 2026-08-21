@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 interface SftpEntry {
   name: string;
@@ -75,7 +76,7 @@ function FileBrowser({ sessionId, active }: Props) {
   const [transfer, setTransfer] = useState<TransferState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
-  const [mirror, setMirror] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const transferIdRef = useRef<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
   // the drag-drop subscription is created once; these mirror current state
@@ -326,12 +327,8 @@ function FileBrowser({ sessionId, active }: Props) {
     }
   }
 
-  async function deleteSelected() {
+  async function reallyDelete() {
     if (!path || selectedEntries.length === 0) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
     setConfirmDelete(false);
     setError(null);
     try {
@@ -347,6 +344,115 @@ function FileBrowser({ sessionId, active }: Props) {
       setError(String(err));
       load(path);
     }
+  }
+
+  async function editSelected() {
+    if (!path || !selectedEntry || selectedEntry.isDir) return;
+    setError(null);
+    try {
+      await invoke<string>("sftp_edit", {
+        id: sessionId,
+        remotePath: joinPath(path, selectedEntry.name),
+      });
+      flashNotice(`Editing ${selectedEntry.name} — saves auto-upload`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function syncFolder(deleteExtra: boolean) {
+    if (!path || transfer) return;
+    const dir = await openDialog({
+      directory: true,
+      title: deleteExtra
+        ? "Mirror local folder here (deletes remote extras)"
+        : "Sync local folder into current remote directory",
+    });
+    if (typeof dir !== "string") return;
+    const tid = `sync${Date.now()}`;
+    transferIdRef.current = tid;
+    setTransfer({ label: "⇅ comparing…", done: 0, total: 0 });
+    setError(null);
+    try {
+      const summary = await invoke<{
+        uploaded: number;
+        deleted: number;
+        skipped: number;
+      }>("sftp_sync", {
+        id: sessionId,
+        localDir: dir,
+        remoteDir: path,
+        deleteExtra,
+        transferId: tid,
+      });
+      flashNotice(
+        `Sync done: ${summary.uploaded} uploaded, ` +
+          `${summary.skipped} unchanged` +
+          (deleteExtra ? `, ${summary.deleted} deleted` : ""),
+      );
+      load(path);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      transferIdRef.current = null;
+      setTransfer(null);
+    }
+  }
+
+  function menuItems(): MenuItem[] {
+    const items: MenuItem[] = [];
+    const files = selectedEntries.filter((e) => !e.isDir);
+    if (selectedEntries.length > 0) {
+      if (files.length > 0 && !transfer) {
+        items.push({
+          label: files.length > 1 ? `Download (${files.length})…` : "Download…",
+          onClick: download,
+        });
+      }
+      if (selectedEntry && !selectedEntry.isDir && !transfer) {
+        items.push({ label: "Edit (auto-upload on save)", onClick: editSelected });
+      }
+      if (selectedEntry) {
+        items.push({
+          label: "Rename…",
+          onClick: () => {
+            setInputMode("rename");
+            setInputValue(selectedEntry.name);
+          },
+        });
+      }
+      items.push(
+        {
+          label:
+            selectedEntries.length > 1
+              ? `Delete (${selectedEntries.length})…`
+              : "Delete…",
+          danger: true,
+          onClick: () => setConfirmDelete(true),
+        },
+        { label: "", separator: true },
+      );
+    }
+    items.push(
+      { label: "Upload files…", onClick: upload },
+      {
+        label: "New directory…",
+        onClick: () => {
+          setInputMode("mkdir");
+          setInputValue("");
+        },
+      },
+      { label: "", separator: true },
+      { label: "Sync local folder here…", onClick: () => syncFolder(false) },
+      {
+        label: "Mirror local folder here…",
+        danger: true,
+        onClick: () => syncFolder(true),
+      },
+      { label: "", separator: true },
+      { label: "Refresh", onClick: () => path && load(path) },
+    );
+    return items;
   }
 
   return (
@@ -378,129 +484,20 @@ function FileBrowser({ sessionId, active }: Props) {
         </button>
       </div>
 
-      <div className="files-toolbar">
-        <button type="button" onClick={upload} disabled={!path || !!transfer}>
-          Upload
-        </button>
-        <button
-          type="button"
-          onClick={download}
-          disabled={
-            !selectedEntries.some((e) => !e.isDir) || !!transfer
-          }
-        >
-          Download
-        </button>
-        <button
-          type="button"
-          title="Open in local editor; saves upload automatically"
-          onClick={async () => {
-            if (!path || !selectedEntry || selectedEntry.isDir) return;
-            setError(null);
-            try {
-              await invoke<string>("sftp_edit", {
-                id: sessionId,
-                remotePath: joinPath(path, selectedEntry.name),
-              });
-              flashNotice(`Editing ${selectedEntry.name} — saves auto-upload`);
-            } catch (err) {
-              setError(String(err));
-            }
-          }}
-          disabled={!selectedEntry || selectedEntry.isDir || !!transfer}
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setInputMode("mkdir");
-            setInputValue("");
-          }}
-          disabled={!path}
-        >
-          New dir
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedEntry) {
-              setInputMode("rename");
-              setInputValue(selectedEntry.name);
-            }
-          }}
-          disabled={!selectedEntry}
-        >
-          Rename
-        </button>
-        <button
-          type="button"
-          title={
-            mirror
-              ? "Push local folder here, deleting remote extras"
-              : "Push local folder into this directory"
-          }
-          onClick={async () => {
-            if (!path || transfer) return;
-            const dir = await openDialog({
-              directory: true,
-              title: "Sync local folder into current remote directory",
-            });
-            if (typeof dir !== "string") return;
-            const tid = `sync${Date.now()}`;
-            transferIdRef.current = tid;
-            setTransfer({ label: "⇅ comparing…", done: 0, total: 0 });
-            setError(null);
-            try {
-              const summary = await invoke<{
-                uploaded: number;
-                deleted: number;
-                skipped: number;
-              }>("sftp_sync", {
-                id: sessionId,
-                localDir: dir,
-                remoteDir: path,
-                deleteExtra: mirror,
-                transferId: tid,
-              });
-              flashNotice(
-                `Sync done: ${summary.uploaded} uploaded, ` +
-                  `${summary.skipped} unchanged` +
-                  (mirror ? `, ${summary.deleted} deleted` : ""),
-              );
-              load(path);
-            } catch (err) {
-              setError(String(err));
-            } finally {
-              transferIdRef.current = null;
-              setTransfer(null);
-            }
-          }}
-          disabled={!path || !!transfer}
-        >
-          Sync
-        </button>
-        <label className="files-mirror" title="Delete remote files that don't exist locally">
-          <input
-            type="checkbox"
-            checked={mirror}
-            onChange={(e) => setMirror(e.currentTarget.checked)}
-          />
-          mirror
-        </label>
-        <button
-          type="button"
-          className={confirmDelete ? "files-delete confirming" : "files-delete"}
-          onClick={deleteSelected}
-          disabled={selectedEntries.length === 0}
-        >
-          {confirmDelete
-            ? `sure? (${selectedEntries.length})`
-            : selectedEntries.length > 1
-              ? `Delete (${selectedEntries.length})`
-              : "Delete"}
-        </button>
-      </div>
+      {confirmDelete && (
+        <div className="files-inputrow">
+          <span className="files-confirm-text">
+            Delete {selectedEntries.length}{" "}
+            {selectedEntries.length === 1 ? "item" : "items"}?
+          </span>
+          <button type="button" className="danger" onClick={reallyDelete}>
+            Delete
+          </button>
+          <button type="button" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       {inputMode && (
         <form className="files-inputrow" onSubmit={submitInput}>
@@ -518,7 +515,14 @@ function FileBrowser({ sessionId, active }: Props) {
         </form>
       )}
 
-      <div className="files-list">
+      <div
+        className="files-list"
+        onContextMenu={(ev) => {
+          ev.preventDefault();
+          // empty-area menu: keep whatever is selected
+          setCtxMenu({ x: ev.clientX, y: ev.clientY });
+        }}
+      >
         {entries.map((entry) => (
           <div
             key={entry.name}
@@ -526,6 +530,16 @@ function FileBrowser({ sessionId, active }: Props) {
               "files-row" + (selected.has(entry.name) ? " selected" : "")
             }
             onClick={(ev) => handleSelect(ev, entry)}
+            onContextMenu={(ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (!selected.has(entry.name)) {
+                setSelected(new Set([entry.name]));
+                setAnchor(entry.name);
+              }
+              setConfirmDelete(false);
+              setCtxMenu({ x: ev.clientX, y: ev.clientY });
+            }}
             onDoubleClick={() => {
               if (entry.isDir && path) load(joinPath(path, entry.name));
             }}
@@ -568,6 +582,14 @@ function FileBrowser({ sessionId, active }: Props) {
 
       {notice && <div className="files-notice">{notice}</div>}
       {error && <div className="files-error">{error}</div>}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={menuItems()}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }
