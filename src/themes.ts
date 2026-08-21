@@ -1,7 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
 
-// Palettes carried over from the PyQt app (terminal.py THEMES).
-
 interface AppTheme {
   bg: string;
   panel: string;

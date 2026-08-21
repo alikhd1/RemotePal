@@ -1,6 +1,6 @@
-//! Integration with the OS ssh setup, mirroring the PyQt app: a
-//! RemotePal-managed block inside ~/.ssh/config (so plain `ssh <name>`
-//! works anywhere) and launching the system terminal.
+//! Integration with the OS ssh setup: a RemotePal-managed block
+//! inside ~/.ssh/config (so plain `ssh <name>` works anywhere) and
+//! launching the system terminal.
 
 use std::process::Command;
 

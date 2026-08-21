@@ -1,11 +1,11 @@
-//! Encrypted vault backups, byte-compatible with the PyQt app:
+//! Encrypted vault backups, byte-compatible with RemotePal-python:
 //! `RPAL1 + salt(16) + Fernet(tar.gz)`, key = PBKDF2-HMAC-SHA256 with
-//! 600k iterations. The archive carries the PyQt-schema files
+//! 600k iterations. The archive carries the legacy-schema files
 //! (servers.json, passwords.json, storages.json, snippets.json,
 //! keys/*) so either app can restore it, plus a native manifest
 //! (remotepal2.json) for lossless restore of ids/jumps/path-style.
 //!
-//! Snippets live in the same snippets.json the PyQt app uses.
+//! Snippets live in the same snippets.json RemotePal-python uses.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -123,7 +123,7 @@ fn fernet_decrypt(key: &[u8; 32], token: &str) -> Result<Vec<u8>, String> {
         .map_err(|_| bad())
 }
 
-// ---------------------------------------------------- PyQt-schema types
+// -------------------------------------------------- legacy-schema types
 
 #[derive(Serialize, Deserialize)]
 struct PyServer {
@@ -215,7 +215,7 @@ pub fn export_backup(path: &str, password: &str) -> Result<(), String> {
         }
     }
 
-    // PyQt-schema views (jump ids -> names, key paths -> bundled names)
+    // legacy-schema views (jump ids -> names, key paths -> bundled names)
     let name_of: HashMap<&str, &str> = conns
         .iter()
         .map(|c| (c.id.as_str(), c.name.as_str()))
@@ -422,7 +422,7 @@ pub fn import_backup(path: &str, password: &str) -> Result<ImportSummary, String
         return Ok(summary);
     }
 
-    // PyQt backup: map schemas
+    // legacy backup: map schemas
     let keys_dir = connections::vault_dir()?.join("keys");
     if let Some(data) = files.get("servers.json") {
         let servers: Vec<PyServer> =

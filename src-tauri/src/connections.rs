@@ -1,7 +1,7 @@
 //! Saved connections: metadata in ~/.remotepal/connections.json,
 //! passwords in the OS credential store (Windows Credential Manager).
-//! The PyQt app's servers.json lives in the same directory and is only
-//! ever read (legacy import), never written.
+//! RemotePal-python's servers.json lives in the same directory and is
+//! only ever read (legacy import), never written.
 
 use std::fs;
 use std::path::PathBuf;
@@ -218,8 +218,7 @@ pub async fn ssh_connect_saved(
 
 /// ssh-copy-id: append a public key to the server's authorized_keys.
 /// Useful when the server only accepts password auth so far — after
-/// deploying, key auth works. Idempotent (grep before append), same
-/// shell command the PyQt app uses.
+/// deploying, key auth works. Idempotent (grep before append).
 #[tauri::command]
 pub async fn deploy_key(
     lock: State<'_, StoreLock>,

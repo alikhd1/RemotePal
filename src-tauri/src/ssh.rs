@@ -5,8 +5,8 @@
 //! Connections are described as a chain of ConnectSpecs (jump hosts
 //! first, target last); every hop after the first runs over a
 //! direct-tcpip channel of the previous one. Host keys are verified
-//! per hop against ~/.remotepal/known_hosts (the same file the PyQt
-//! app maintains); unknown or changed keys fail the connect with a
+//! per hop against ~/.remotepal/known_hosts (shared with
+//! RemotePal-python); unknown or changed keys fail the connect with a
 //! structured error so the UI can show a trust dialog.
 
 use std::collections::HashMap;
@@ -169,8 +169,8 @@ impl client::Handler for KnownHostsHandler {
 }
 
 /// Drop known_hosts lines for this host so a replacement key can be
-/// learned. Only plain-text entries are matched; this app (and the
-/// PyQt one) never writes hashed entries.
+/// learned. Only plain-text entries are matched; RemotePal never
+/// writes hashed entries.
 fn forget_host_entries(path: &PathBuf, host: &str, port: u16) -> Result<(), String> {
     if !path.exists() {
         return Ok(());

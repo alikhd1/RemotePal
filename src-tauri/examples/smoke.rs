@@ -1,5 +1,5 @@
 //! Headless smoke test for the SSH layer, run against the demo sshd from
-//! the PyQt repo: `cargo run --example smoke -- <port> <password>`.
+//! the RemotePal-python repo: `cargo run --example smoke -- <port> <password>`.
 //!
 //! Covers: trust-on-first-use (fresh vault must reject, trusting must
 //! fix), PTY echo, SFTP round-trip, a real local port forward, and a

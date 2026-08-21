@@ -1,6 +1,6 @@
-//! Vault key management: key pairs live in ~/.remotepal/keys like the
-//! PyQt app's. Generation shells out to the OS ssh-keygen (bundled
-//! with Windows OpenSSH); missing .pub files are derived with
+//! Vault key management: key pairs live in ~/.remotepal/keys, shared
+//! with RemotePal-python. Generation shells out to the OS ssh-keygen
+//! (bundled with Windows OpenSSH); missing .pub files are derived with
 //! `ssh-keygen -y`.
 
 use std::path::PathBuf;

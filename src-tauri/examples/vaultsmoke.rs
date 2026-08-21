@@ -1,5 +1,5 @@
-//! Compatibility smoke test: import a backup exported by the PyQt
-//! app's vault.py into a fresh Tauri vault.
+//! Compatibility smoke test: import a backup exported by
+//! RemotePal-python's vault into a fresh vault.
 //! `cargo run --example vaultsmoke -- <backup.rpal> <password>`
 
 fn main() {
