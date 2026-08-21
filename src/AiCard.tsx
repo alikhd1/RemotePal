@@ -2,20 +2,23 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Select } from "./Dropdown";
 import {
-  PROVIDERS,
+  getProviders,
   getProvider,
   setProvider,
   getModel,
   setModel,
   defaultModelFor,
   providerDef,
+  addCustomProvider,
+  removeCustomProvider,
 } from "./aiConfig";
 
-// API-key + provider settings for the AI copilot. Each provider's key is
-// stored in the OS keyring (service "RemotePal-AI", account = provider) by
-// the backend; the webview never receives a key back — this card only
-// learns whether one is present. The active provider and model are kept in
-// localStorage (see aiConfig) so the docked AiPanel picks them up.
+// Provider + API-key settings. Users can select a built-in provider
+// (Anthropic, GapGPT) or define their own OpenAI-compatible endpoint.
+// Each provider's key is stored in the OS keyring (service "RemotePal-AI",
+// account = provider id) by the backend; the webview never sees a key
+// back. The active provider and models are kept in localStorage (aiConfig)
+// so the docked AiPanel picks them up.
 function AiCard() {
   const [provider, setProviderState] = useState(getProvider());
   const [key, setKey] = useState("");
@@ -25,7 +28,14 @@ function AiCard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // add-provider form
+  const [addOpen, setAddOpen] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addUrl, setAddUrl] = useState("");
+  const [addModel, setAddModel] = useState("");
+
   const def = providerDef(provider);
+  const providers = getProviders();
 
   function refreshStatus(p: string) {
     invoke<boolean>("ai_key_status", { provider: p })
@@ -82,6 +92,36 @@ function AiCard() {
     }
   }
 
+  async function deleteProvider() {
+    // clear its stored key, then drop the definition
+    try {
+      await invoke("ai_key_save", { key: "", provider });
+    } catch {
+      /* ignore — removing anyway */
+    }
+    removeCustomProvider(provider);
+    switchProvider(getProvider());
+    setNotice("Provider removed.");
+  }
+
+  function addProvider() {
+    if (!addName.trim() || !addUrl.trim()) {
+      setError("Name and endpoint URL are required.");
+      return;
+    }
+    const id = addCustomProvider({
+      label: addName,
+      baseUrl: addUrl,
+      defaultModel: addModel,
+    });
+    setAddOpen(false);
+    setAddName("");
+    setAddUrl("");
+    setAddModel("");
+    switchProvider(id);
+    setNotice("Provider added — now set its API key.");
+  }
+
   return (
     <div className="saved-panel">
       <h2>AI Copilot</h2>
@@ -89,9 +129,13 @@ function AiCard() {
       <label className="ai-field-label">Provider</label>
       <Select
         value={provider}
-        options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+        options={providers.map((p) => ({ value: p.id, label: p.label }))}
         onChange={switchProvider}
       />
+
+      {def.kind === "openai" && def.baseUrl && (
+        <div className="ai-endpoint">{def.baseUrl}</div>
+      )}
 
       <label className="ai-field-label">API key</label>
       <input
@@ -99,7 +143,9 @@ function AiCard() {
         className="vault-pass"
         value={key}
         onChange={(e) => setKey(e.currentTarget.value)}
-        placeholder={present ? "key set — enter a new one to replace" : def.keyHint}
+        placeholder={
+          present ? "key set — enter a new one to replace" : `${def.label} API key`
+        }
       />
       <div className="vault-buttons">
         <button type="button" disabled={busy} onClick={save}>
@@ -107,7 +153,12 @@ function AiCard() {
         </button>
         {present && (
           <button type="button" disabled={busy} onClick={clear}>
-            Remove
+            Remove key
+          </button>
+        )}
+        {!def.builtin && (
+          <button type="button" disabled={busy} onClick={deleteProvider}>
+            Delete provider
           </button>
         )}
       </div>
@@ -122,10 +173,58 @@ function AiCard() {
         placeholder={defaultModelFor(provider)}
       />
 
+      {addOpen ? (
+        <div className="ai-add-provider">
+          <label className="ai-field-label">New provider name</label>
+          <input
+            className="vault-pass"
+            value={addName}
+            onChange={(e) => setAddName(e.currentTarget.value)}
+            placeholder="e.g. My proxy"
+          />
+          <label className="ai-field-label">
+            Endpoint URL (OpenAI-compatible /chat/completions)
+          </label>
+          <input
+            className="vault-pass"
+            value={addUrl}
+            onChange={(e) => setAddUrl(e.currentTarget.value)}
+            placeholder="https://…/v1/chat/completions"
+          />
+          <label className="ai-field-label">Default model</label>
+          <input
+            className="vault-pass"
+            value={addModel}
+            onChange={(e) => setAddModel(e.currentTarget.value)}
+            placeholder="gpt-4o"
+          />
+          <div className="vault-buttons">
+            <button type="button" onClick={addProvider}>
+              Add
+            </button>
+            <button type="button" onClick={() => setAddOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="link-btn ai-add-toggle"
+          onClick={() => {
+            setAddOpen(true);
+            setError(null);
+            setNotice(null);
+          }}
+        >
+          + Add a provider
+        </button>
+      )}
+
       <div className="saved-empty">
-        {provider === "gapgpt"
-          ? "GapGPT is an OpenAI-compatible endpoint (api.gapgpt.app). Keys are stored in the OS credential store, never in the app files."
-          : "Your API key powers the Copilot panel. Stored in the OS credential store, never in the app files."}
+        Add any OpenAI-compatible endpoint as a provider and pick it in the
+        Copilot panel. Keys are stored in the OS credential store, never in the
+        app files.
       </div>
       {notice && <div className="connect-notice">{notice}</div>}
       {error && <div className="connect-error">{error}</div>}

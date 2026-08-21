@@ -12,8 +12,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { LiveSession, SessionMeta } from "./SnippetsPanel";
 import { readTerminal } from "./terminalRegistry";
-import { getProvider, getModel } from "./aiConfig";
+import {
+  getProvider,
+  setProvider,
+  getProviders,
+  getModel,
+  providerDef,
+} from "./aiConfig";
 import { Select } from "./Dropdown";
+import Markdown from "./Markdown";
 
 // Anthropic content blocks, stored verbatim.
 type Block = any;
@@ -68,6 +75,11 @@ function AiPanel({ sessionId, allSessions }: Props) {
   const [keyMissing, setKeyMissing] = useState(false);
   const [attachOutput, setAttachOutput] = useState(false);
   const [target, setTarget] = useState<number>(sessionId);
+  const [provider, setProviderState] = useState<string>(getProvider());
+  const [snippetFor, setSnippetFor] = useState<{
+    command: string;
+    name: string;
+  } | null>(null);
 
   // canonical conversation + loop bookkeeping live in refs so the async
   // loop (which suspends across a human approval) never reads stale state
@@ -82,19 +94,33 @@ function AiPanel({ sessionId, allSessions }: Props) {
   } | null>(null);
   const allSessionsRef = useRef(allSessions);
   allSessionsRef.current = allSessions;
+  const providerRef = useRef(provider);
+  providerRef.current = provider;
 
   targetRef.current = target;
 
-  useEffect(() => {
-    invoke<boolean>("ai_key_status", { provider: getProvider() })
+  function checkKey(p: string) {
+    invoke<boolean>("ai_key_status", { provider: p })
       .then((present) => setKeyMissing(!present))
       .catch(() => {});
+  }
+
+  useEffect(() => {
+    checkKey(provider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function switchProvider(id: string) {
+    setProvider(id); // persist so settings + other panels agree
+    setProviderState(id);
+    setError(null);
+    checkKey(id);
+  }
 
   const msgsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, live, pending]);
+  }, [messages, live, pending, snippetFor]);
 
   function sync() {
     setMessages([...convoRef.current]);
@@ -132,11 +158,14 @@ function AiPanel({ sessionId, allSessions }: Props) {
         },
       );
 
-      const provider = getProvider();
+      const pid = providerRef.current;
+      const def = providerDef(pid);
       const result = await invoke<TurnResult>("ai_chat", {
         turnId,
-        provider,
-        model: getModel(provider),
+        provider: pid,
+        kind: def.kind,
+        baseUrl: def.baseUrl,
+        model: getModel(pid),
         context: {
           panel_session_id: targetRef.current,
           sessions: allSessionsRef.current.map((s) => ({
@@ -340,14 +369,73 @@ function AiPanel({ sessionId, allSessions }: Props) {
     if (turnId) invoke("ai_cancel", { turnId }).catch(() => {});
   }
 
+  // ---- save a command as a snippet ----------------------------------
+
+  function openSnippet(command: string) {
+    // default the name to the base command (e.g. "systemctl")
+    const base = command.trim().split(/\s+/)[0] || "snippet";
+    setSnippetFor({ command, name: base });
+    setNotice(null);
+  }
+
+  async function saveSnippet() {
+    if (!snippetFor) return;
+    const name = snippetFor.name.trim();
+    if (!name) return;
+    try {
+      // snippets_save replaces the whole list, so append to the current one
+      const existing =
+        await invoke<{ name: string; command: string }[]>("snippets_list");
+      await invoke("snippets_save", {
+        snippets: [...existing, { name, command: snippetFor.command }],
+      });
+      setSnippetFor(null);
+      setNotice(`Saved snippet "${name}".`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   // ---- rendering -----------------------------------------------------
 
   const busy = status === "streaming" || status === "running_tool";
+
+  function statusInfo(): { label: string; cls: string } {
+    switch (status) {
+      case "streaming":
+        if (live.text) return { label: "Writing…", cls: "busy" };
+        if (live.thinking) return { label: "Thinking…", cls: "busy" };
+        return { label: "Connecting…", cls: "busy" };
+      case "running_tool":
+        return { label: "Running command…", cls: "busy" };
+      case "awaiting_approval":
+        return { label: "Waiting for approval", cls: "warn" };
+      case "error":
+        return { label: "Error", cls: "error" };
+      default:
+        return { label: "Ready", cls: "idle" };
+    }
+  }
+  const st = statusInfo();
 
   return (
     <div className="ai-panel">
       <div className="ai-header">
         <span className="ai-title">Copilot</span>
+        <span className={"ai-status ai-status-" + st.cls}>
+          <span className="ai-status-dot" />
+          {st.label}
+        </span>
+      </div>
+
+      <div className="ai-controls">
+        <Select
+          size="sm"
+          title="AI provider"
+          value={provider}
+          options={getProviders().map((p) => ({ value: p.id, label: p.label }))}
+          onChange={switchProvider}
+        />
         {allSessions.length > 1 && (
           <Select
             size="sm"
@@ -372,7 +460,12 @@ function AiPanel({ sessionId, allSessions }: Props) {
         )}
 
         {messages.map((m, i) => (
-          <MessageView key={i} item={m} hostFor={hostFor} />
+          <MessageView
+            key={i}
+            item={m}
+            hostFor={hostFor}
+            onSaveCommand={openSnippet}
+          />
         ))}
 
         {(live.thinking || live.text) && (
@@ -403,11 +496,64 @@ function AiPanel({ sessionId, allSessions }: Props) {
           </div>
         ))}
 
+        {snippetFor && (
+          <div className="ai-approval">
+            <div className="ai-approval-head">Save as snippet</div>
+            <pre className="ai-cmd">{snippetFor.command}</pre>
+            <input
+              className="ai-snippet-name"
+              autoFocus
+              value={snippetFor.name}
+              placeholder="snippet name"
+              onChange={(e) =>
+                setSnippetFor({ ...snippetFor, name: e.currentTarget.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveSnippet();
+                } else if (e.key === "Escape") {
+                  setSnippetFor(null);
+                }
+              }}
+            />
+            <div className="ai-approval-btns">
+              <button
+                className="accent-btn"
+                onClick={saveSnippet}
+                disabled={!snippetFor.name.trim()}
+              >
+                Save
+              </button>
+              <button className="link-btn" onClick={() => setSnippetFor(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {notice && <div className="ai-notice">{notice}</div>}
-        {error && <div className="files-error">{error}</div>}
+        {error && (
+          <div className="ai-error-box">
+            <div className="files-error">{error}</div>
+            {status === "error" && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setError(null);
+                  runTurn();
+                }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         {keyMissing && (
           <div className="ai-notice">
-            No API key set. Add one in the AI card on the connect screen.
+            No API key set for this provider. Add one in the AI settings on the
+            connect screen.
           </div>
         )}
         <div ref={msgsEndRef} />
@@ -479,9 +625,11 @@ function formatCapture(cap: ExecCapture): string {
 function MessageView({
   item,
   hostFor,
+  onSaveCommand,
 }: {
   item: ChatItem;
   hostFor: (sid: number) => string;
+  onSaveCommand: (command: string) => void;
 }) {
   return (
     <>
@@ -495,7 +643,11 @@ function MessageView({
                 (item.role === "user" ? "ai-msg-user" : "ai-msg-assistant")
               }
             >
-              <div className="ai-text">{b.text}</div>
+              {item.role === "assistant" ? (
+                <Markdown text={b.text} />
+              ) : (
+                <div className="ai-text">{b.text}</div>
+              )}
             </div>
           );
         }
@@ -510,10 +662,21 @@ function MessageView({
         if (b.type === "tool_use") {
           if (b.name === "run_command") {
             const sid = b.input?.session_id;
+            const command = String(b.input?.command ?? "");
             return (
               <div key={i} className="ai-tooluse">
                 ▸ ran on {typeof sid === "number" ? hostFor(sid) : "this host"}:{" "}
-                <code>{b.input?.command}</code>
+                <code>{command}</code>
+                {command && (
+                  <button
+                    type="button"
+                    className="ai-save-snippet"
+                    title="Save as snippet"
+                    onClick={() => onSaveCommand(command)}
+                  >
+                    save
+                  </button>
+                )}
               </div>
             );
           }

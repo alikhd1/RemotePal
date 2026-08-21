@@ -1,40 +1,114 @@
-// Which AI provider/model the Copilot uses. Persisted in localStorage so
-// the setting on the connect screen (AiCard) reaches the AiPanel docked in
-// a terminal. Keys themselves live in the OS keyring (backend), one per
-// provider — never here.
+// AI provider registry. Two built-in providers plus any the user defines
+// (custom OpenAI-compatible endpoints). The active provider, the custom
+// list, and per-provider model overrides live in localStorage so the
+// setting reaches the AiPanel docked in a terminal. API keys never live
+// here — they're in the OS keyring (backend), one per provider id.
+
+export type ProviderKind = "anthropic" | "openai";
 
 export interface ProviderDef {
   id: string;
   label: string;
+  kind: ProviderKind;
+  /** required for kind "openai" — the Chat Completions endpoint */
+  baseUrl?: string;
   defaultModel: string;
-  keyHint: string;
+  builtin?: boolean;
 }
 
-export const PROVIDERS: ProviderDef[] = [
+const BUILTINS: ProviderDef[] = [
   {
     id: "anthropic",
     label: "Anthropic (Claude)",
+    kind: "anthropic",
     defaultModel: "claude-opus-5",
-    keyHint: "Anthropic API key (sk-ant-…)",
+    builtin: true,
   },
   {
     id: "gapgpt",
     label: "GapGPT",
+    kind: "openai",
+    baseUrl: "https://api.gapgpt.app/v1/chat/completions",
     defaultModel: "gpt-4o",
-    keyHint: "GapGPT API key",
+    builtin: true,
   },
 ];
 
 const PROVIDER_KEY = "remotepal-ai-provider";
+const CUSTOM_KEY = "remotepal-ai-providers";
 const MODEL_KEY = (provider: string) => `remotepal-ai-model-${provider}`;
 
+function getCustom(): ProviderDef[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    // custom providers are always OpenAI-compatible
+    return list
+      .filter((p) => p && p.id && p.label && p.baseUrl)
+      .map((p) => ({
+        id: String(p.id),
+        label: String(p.label),
+        kind: "openai" as const,
+        baseUrl: String(p.baseUrl),
+        defaultModel: String(p.defaultModel || "gpt-4o"),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCustom(list: ProviderDef[]): void {
+  localStorage.setItem(
+    CUSTOM_KEY,
+    JSON.stringify(
+      list.map((p) => ({
+        id: p.id,
+        label: p.label,
+        baseUrl: p.baseUrl,
+        defaultModel: p.defaultModel,
+      })),
+    ),
+  );
+}
+
+/** All providers: built-ins first, then user-defined. */
+export function getProviders(): ProviderDef[] {
+  return [...BUILTINS, ...getCustom()];
+}
+
 export function providerDef(id: string): ProviderDef {
-  return PROVIDERS.find((p) => p.id === id) ?? PROVIDERS[0];
+  return getProviders().find((p) => p.id === id) ?? BUILTINS[0];
+}
+
+/** Add a custom OpenAI-compatible provider; returns its generated id. */
+export function addCustomProvider(input: {
+  label: string;
+  baseUrl: string;
+  defaultModel?: string;
+}): string {
+  const id = `custom-${crypto.randomUUID().slice(0, 8)}`;
+  const def: ProviderDef = {
+    id,
+    label: input.label.trim() || "Custom",
+    kind: "openai",
+    baseUrl: input.baseUrl.trim(),
+    defaultModel: (input.defaultModel || "gpt-4o").trim(),
+  };
+  saveCustom([...getCustom(), def]);
+  return id;
+}
+
+export function removeCustomProvider(id: string): void {
+  saveCustom(getCustom().filter((p) => p.id !== id));
+  localStorage.removeItem(MODEL_KEY(id));
+  if (getProvider() === id) setProvider(BUILTINS[0].id);
 }
 
 export function getProvider(): string {
   const p = localStorage.getItem(PROVIDER_KEY);
-  return p && PROVIDERS.some((x) => x.id === p) ? p : PROVIDERS[0].id;
+  return p && getProviders().some((x) => x.id === p) ? p : BUILTINS[0].id;
 }
 
 export function setProvider(id: string): void {
