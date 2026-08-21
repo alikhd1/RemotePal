@@ -65,7 +65,15 @@ function FileBrowser({ sessionId }: Props) {
   const [inputValue, setInputValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const transferIdRef = useRef<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+
+  function flashNotice(text: string) {
+    setNotice(text);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 4000);
+  }
 
   async function load(dir: string) {
     setError(null);
@@ -99,20 +107,35 @@ function FileBrowser({ sessionId }: Props) {
       .catch((err) => {
         if (!cancelled) setError(String(err));
       });
-    const unlisten: Promise<UnlistenFn> = listen<{
-      transferId: string;
-      done: number;
-      total: number;
-    }>("sftp-progress", (e) => {
-      if (e.payload.transferId === transferIdRef.current) {
-        setTransfer((t) =>
-          t ? { ...t, done: e.payload.done, total: e.payload.total } : t,
-        );
-      }
-    });
+    const unlisteners: Promise<UnlistenFn>[] = [
+      listen<{ transferId: string; done: number; total: number }>(
+        "sftp-progress",
+        (e) => {
+          if (e.payload.transferId === transferIdRef.current) {
+            setTransfer((t) =>
+              t ? { ...t, done: e.payload.done, total: e.payload.total } : t,
+            );
+          }
+        },
+      ),
+      listen<{ sessionId: number; name: string }>("sftp-edit-uploaded", (e) => {
+        if (e.payload.sessionId === sessionId) {
+          flashNotice(`Saved ${e.payload.name} — uploaded`);
+        }
+      }),
+      listen<{ sessionId: number; name: string; message?: string }>(
+        "sftp-edit-error",
+        (e) => {
+          if (e.payload.sessionId === sessionId) {
+            setError(`upload of ${e.payload.name} failed: ${e.payload.message}`);
+          }
+        },
+      ),
+    ];
     return () => {
       cancelled = true;
-      unlisten.then((un) => un());
+      unlisteners.forEach((p) => p.then((un) => un()));
+      window.clearTimeout(noticeTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -258,6 +281,26 @@ function FileBrowser({ sessionId }: Props) {
         </button>
         <button
           type="button"
+          title="Open in local editor; saves upload automatically"
+          onClick={async () => {
+            if (!path || !selectedEntry || selectedEntry.isDir) return;
+            setError(null);
+            try {
+              await invoke<string>("sftp_edit", {
+                id: sessionId,
+                remotePath: joinPath(path, selectedEntry.name),
+              });
+              flashNotice(`Editing ${selectedEntry.name} — saves auto-upload`);
+            } catch (err) {
+              setError(String(err));
+            }
+          }}
+          disabled={!selectedEntry || selectedEntry.isDir || !!transfer}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
           onClick={() => {
             setInputMode("mkdir");
             setInputValue("");
@@ -355,6 +398,7 @@ function FileBrowser({ sessionId }: Props) {
         </div>
       )}
 
+      {notice && <div className="files-notice">{notice}</div>}
       {error && <div className="files-error">{error}</div>}
     </div>
   );

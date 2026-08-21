@@ -31,4 +31,5 @@ uuid = { version = "1.24.1", features = ["v4"] }
 keyring = "4.1.6"
 russh-sftp = "2.4.0"
 tauri-plugin-dialog = "2.7.2"
+notify = "8.2.0"
 

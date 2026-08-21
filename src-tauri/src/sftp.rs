@@ -2,14 +2,24 @@
 //! session, file listings, and transfers with progress events
 //! (`sftp-progress` payload: { transferId, done, total }).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use notify::{RecursiveMode, Watcher};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::ssh::SshSessions;
+use crate::ssh::{SessionMaps, SshSessions};
+
+/// Live edit-on-save watchers, keyed by SSH session id. Dropping a
+/// watcher stops it; entries for dead sessions are pruned on the next
+/// sftp_edit call.
+#[derive(Default)]
+pub struct EditState(pub Mutex<HashMap<u32, Vec<notify::RecommendedWatcher>>>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,11 +41,17 @@ struct Progress<'a> {
 const PROGRESS_STEP: u64 = 256 * 1024;
 
 async fn sftp_for(sessions: &SshSessions, id: u32) -> Result<Arc<SftpSession>, String> {
-    if let Some(s) = sessions.maps.sftp.lock().unwrap().get(&id) {
+    sftp_for_maps(&sessions.maps, id).await
+}
+
+pub(crate) async fn sftp_for_maps(
+    maps: &SessionMaps,
+    id: u32,
+) -> Result<Arc<SftpSession>, String> {
+    if let Some(s) = maps.sftp.lock().unwrap().get(&id) {
         return Ok(Arc::clone(s));
     }
-    let handle = sessions
-        .maps
+    let handle = maps
         .handles
         .lock()
         .unwrap()
@@ -55,13 +71,138 @@ async fn sftp_for(sessions: &SshSessions, id: u32) -> Result<Arc<SftpSession>, S
             .await
             .map_err(|e| e.to_string())?,
     );
-    sessions
-        .maps
-        .sftp
-        .lock()
-        .unwrap()
-        .insert(id, Arc::clone(&sftp));
+    maps.sftp.lock().unwrap().insert(id, Arc::clone(&sftp));
     Ok(sftp)
+}
+
+async fn copy_remote_to_local(
+    sftp: &SftpSession,
+    remote_path: &str,
+    local_path: &PathBuf,
+) -> Result<(), String> {
+    let mut remote = sftp.open(remote_path).await.map_err(|e| e.to_string())?;
+    let mut local = tokio::fs::File::create(local_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::io::copy(&mut remote, &mut local)
+        .await
+        .map_err(|e| e.to_string())?;
+    local.flush().await.map_err(|e| e.to_string())?;
+    let _ = remote.shutdown().await;
+    Ok(())
+}
+
+async fn copy_local_to_remote(
+    sftp: &SftpSession,
+    local_path: &PathBuf,
+    remote_path: &str,
+) -> Result<(), String> {
+    let mut local = tokio::fs::File::open(local_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut remote = sftp.create(remote_path).await.map_err(|e| e.to_string())?;
+    tokio::io::copy(&mut local, &mut remote)
+        .await
+        .map_err(|e| e.to_string())?;
+    remote.flush().await.map_err(|e| e.to_string())?;
+    remote.shutdown().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditEvent {
+    session_id: u32,
+    name: String,
+    message: Option<String>,
+}
+
+/// Download the file to a temp dir, open it in the default local app,
+/// and re-upload (debounced) every time it changes on disk.
+#[tauri::command]
+pub async fn sftp_edit(
+    app: AppHandle,
+    state: State<'_, SshSessions>,
+    edits: State<'_, EditState>,
+    id: u32,
+    remote_path: String,
+) -> Result<String, String> {
+    let sftp = sftp_for(&state, id).await?;
+    let name = remote_path
+        .rsplit('/')
+        .next()
+        .unwrap_or("file")
+        .to_string();
+    let dir = std::env::temp_dir()
+        .join("remotepal-edit")
+        .join(id.to_string());
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    let local = dir.join(&name);
+    copy_remote_to_local(&sftp, &remote_path, &local).await?;
+
+    tauri_plugin_opener::open_path(&local, None::<&str>)
+        .map_err(|e| format!("cannot open editor: {e}"))?;
+
+    // Watch the parent dir: editors replace files on save, which kills
+    // a watch placed on the file itself.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let watch_name = name.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if let Ok(event) = res {
+            let relevant = matches!(
+                event.kind,
+                notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+            ) && event
+                .paths
+                .iter()
+                .any(|p| p.file_name().is_some_and(|f| f == watch_name.as_str()));
+            if relevant {
+                let _ = tx.send(());
+            }
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher
+        .watch(&dir, RecursiveMode::NonRecursive)
+        .map_err(|e| e.to_string())?;
+
+    let maps = Arc::clone(&state.maps);
+    let event_name = name.clone();
+    tauri::async_runtime::spawn(async move {
+        while rx.recv().await.is_some() {
+            // debounce: editors emit bursts of events per save
+            while let Ok(Some(_)) =
+                tokio::time::timeout(Duration::from_millis(400), rx.recv()).await
+            {}
+            let result = match sftp_for_maps(&maps, id).await {
+                Ok(sftp) => {
+                    copy_local_to_remote(&sftp, &dir.join(&event_name), &remote_path).await
+                }
+                Err(e) => Err(e),
+            };
+            let (event, message) = match result {
+                Ok(()) => ("sftp-edit-uploaded", None),
+                Err(e) => ("sftp-edit-error", Some(e)),
+            };
+            let _ = app.emit(
+                event,
+                EditEvent {
+                    session_id: id,
+                    name: event_name.clone(),
+                    message,
+                },
+            );
+        }
+    });
+
+    // keep the watcher alive; prune watchers of dead sessions
+    let mut map = edits.0.lock().unwrap();
+    let alive: Vec<u32> = state.maps.senders.lock().unwrap().keys().copied().collect();
+    map.retain(|sid, _| alive.contains(sid));
+    map.entry(id).or_default().push(watcher);
+    Ok(local.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

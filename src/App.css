@@ -698,6 +698,14 @@ body,
   color: var(--fg-dim);
 }
 
+.files-notice {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+  border-top: 1px solid rgba(152, 195, 121, 0.4);
+}
+
 .files-error {
   padding: 6px 8px;
   font-size: 12px;

@@ -9,6 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ssh::SshSessions::default())
         .manage(connections::StoreLock::default())
+        .manage(sftp::EditState::default())
         .invoke_handler(tauri::generate_handler![
             ssh::ssh_connect,
             ssh::ssh_write,
@@ -26,6 +27,7 @@ pub fn run() {
             sftp::sftp_delete,
             sftp::sftp_download,
             sftp::sftp_upload,
+            sftp::sftp_edit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
