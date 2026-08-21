@@ -89,19 +89,44 @@ impl Default for AiState {
 
 // ------------------------------------------------------------- keyring
 
+/// Read a provider's key. Touch ID–protected storage wins when an item is
+/// there (macOS only); otherwise fall back to the ordinary credential
+/// store, so keys saved before biometrics were enabled keep working.
 fn key_get(provider: &str) -> Option<String> {
+    match crate::biometric::get(
+        KEYRING_SERVICE,
+        provider,
+        "unlock your AI API key",
+    ) {
+        Ok(Some(k)) => return Some(k),
+        // cancelled/failed auth: don't silently fall through to a copy of
+        // the same secret the user just declined to unlock
+        Err(_) => return None,
+        Ok(None) => {}
+    }
     keyring::Entry::new(KEYRING_SERVICE, provider)
         .and_then(|e| e.get_password())
         .ok()
 }
 
-fn key_set(provider: &str, value: &str) -> Result<(), String> {
+/// Store a key. With `biometric`, it goes into Touch ID–protected storage
+/// and the plain copy is removed, so there is only ever one of them.
+fn key_set(provider: &str, value: &str, biometric: bool) -> Result<(), String> {
+    if biometric {
+        crate::biometric::set(KEYRING_SERVICE, provider, value)?;
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, provider) {
+            let _ = entry.delete_credential();
+        }
+        return Ok(());
+    }
+    let _ = crate::biometric::delete(KEYRING_SERVICE, provider);
     keyring::Entry::new(KEYRING_SERVICE, provider)
         .and_then(|e| e.set_password(value))
         .map_err(|e| format!("cannot store API key: {e}"))
 }
 
 fn key_del(provider: &str) {
+    let _ = crate::biometric::delete(KEYRING_SERVICE, provider);
     if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, provider) {
         let _ = entry.delete_credential();
     }
@@ -845,11 +870,12 @@ pub fn ai_key_save(
     state: State<'_, AiState>,
     key: Option<String>,
     provider: Option<String>,
+    biometric: Option<bool>,
 ) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     match key {
         Some(k) if !k.is_empty() => {
-            key_set(&provider, &k)?;
+            key_set(&provider, &k, biometric.unwrap_or(false))?;
             // keep the in-memory copy in step so the next chat turn doesn't
             // have to go back to the credential store
             state.remember_key(&provider, &k);
@@ -868,6 +894,12 @@ pub fn ai_key_save(
 pub fn ai_key_status(state: State<'_, AiState>, provider: Option<String>) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     Ok(state.cached_key(&provider).is_some())
+}
+
+/// Whether this machine can gate stored keys behind Touch ID.
+#[tauri::command]
+pub fn ai_biometric_available() -> bool {
+    crate::biometric::available()
 }
 
 #[tauri::command]

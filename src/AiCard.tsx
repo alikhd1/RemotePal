@@ -28,6 +28,10 @@ function AiCard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Touch ID (macOS): gate the stored key behind a fingerprint
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [useBiometric, setUseBiometric] = useState(false);
+
   // add-provider form
   const [addOpen, setAddOpen] = useState(false);
   const [addName, setAddName] = useState("");
@@ -47,6 +51,12 @@ function AiCard() {
     refreshStatus(provider);
   }, [provider]);
 
+  useEffect(() => {
+    invoke<boolean>("ai_biometric_available")
+      .then(setBioAvailable)
+      .catch(() => setBioAvailable(false));
+  }, []);
+
   function switchProvider(p: string) {
     setProvider(p);
     setProviderState(p);
@@ -65,10 +75,18 @@ function AiCard() {
     setError(null);
     setNotice(null);
     try {
-      await invoke("ai_key_save", { key, provider });
+      await invoke("ai_key_save", {
+        key,
+        provider,
+        biometric: bioAvailable && useBiometric,
+      });
       setKey("");
       setPresent(true);
-      setNotice(`${def.label} key saved.`);
+      setNotice(
+        bioAvailable && useBiometric
+          ? `${def.label} key saved behind Touch ID.`
+          : `${def.label} key saved.`,
+      );
     } catch (err) {
       setError(String(err));
     } finally {
@@ -152,6 +170,16 @@ function AiCard() {
           present ? "key set — enter a new one to replace" : `${def.label} API key`
         }
       />
+      {bioAvailable && (
+        <label className="ai-bio-toggle" title="Require Touch ID to read this key">
+          <input
+            type="checkbox"
+            checked={useBiometric}
+            onChange={(e) => setUseBiometric(e.currentTarget.checked)}
+          />
+          Protect with Touch ID
+        </label>
+      )}
       <div className="vault-buttons">
         <button type="button" disabled={busy} onClick={save}>
           Save

@@ -46,3 +46,7 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 # local shell sessions: ConPTY on Windows, forkpty elsewhere
 portable-pty = "0.9"
 
+# Touch ID-gated key storage (see src/biometric.rs); macOS only
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+

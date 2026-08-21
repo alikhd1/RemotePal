@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod biometric;
 pub mod connections;
 pub mod forwards;
 pub mod keys;
@@ -77,6 +78,7 @@ pub fn run() {
             vault::vault_import,
             ai::ai_key_save,
             ai::ai_key_status,
+            ai::ai_biometric_available,
             ai::ai_chat,
             ai::ai_cancel,
             ai::ai_exec,
