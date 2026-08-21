@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import S3Storages from "./S3Storages";
 import VaultCard from "./VaultCard";
+import KeysCard, { type VaultKey } from "./KeysCard";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import type { SessionMeta } from "./SnippetsPanel";
 
@@ -57,6 +58,7 @@ interface Props {
 function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [importBump, setImportBump] = useState(0);
   const [saved, setSaved] = useState<SavedConnection[]>([]);
+  const [vaultKeys, setVaultKeys] = useState<VaultKey[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -93,6 +95,9 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
 
   useEffect(() => {
     refresh();
+    invoke<VaultKey[]>("keys_list")
+      .then(setVaultKeys)
+      .catch(() => {});
   }, []);
 
   async function connectSaved(
@@ -391,6 +396,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
           </ul>
         </div>
         <S3Storages key={importBump} onOpen={onOpenS3} />
+        <KeysCard />
         <VaultCard
           onImported={() => {
             refresh();
@@ -453,7 +459,15 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
               value={keyPath}
               onChange={(e) => setKeyPath(e.currentTarget.value)}
               placeholder="C:\Users\me\.ssh\id_ed25519 (optional)"
+              list="vault-keys"
             />
+            <datalist id="vault-keys">
+              {vaultKeys.map((k) => (
+                <option key={k.path} value={k.path}>
+                  {k.name}
+                </option>
+              ))}
+            </datalist>
           </label>
           {saved.filter((c) => c.id !== editingId).length > 0 && (
             <label>

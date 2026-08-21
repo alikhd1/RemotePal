@@ -1,5 +1,6 @@
 pub mod connections;
 pub mod forwards;
+pub mod keys;
 pub mod s3;
 pub mod sftp;
 pub mod ssh;
@@ -47,6 +48,12 @@ pub fn run() {
             forwards::forward_start,
             forwards::forward_stop,
             forwards::forwards_list,
+            keys::keys_list,
+            keys::key_generate,
+            keys::key_import_file,
+            keys::keys_import_os,
+            keys::key_install_os,
+            keys::key_delete,
             vault::snippets_list,
             vault::snippets_save,
             vault::vault_export,
