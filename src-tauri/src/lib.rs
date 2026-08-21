@@ -2,6 +2,7 @@ pub mod ai;
 pub mod connections;
 pub mod forwards;
 pub mod keys;
+pub mod local;
 pub mod s3;
 pub mod sftp;
 pub mod ssh;
@@ -20,6 +21,7 @@ pub fn run() {
         .manage(s3::S3EditState::default())
         .manage(forwards::Forwards::default())
         .manage(ai::AiState::default())
+        .manage(local::LocalSessions::default())
         .invoke_handler(tauri::generate_handler![
             ssh::ssh_connect,
             ssh::ssh_write,
@@ -78,6 +80,11 @@ pub fn run() {
             ai::ai_chat,
             ai::ai_cancel,
             ai::ai_exec,
+            local::local_open,
+            local::local_write,
+            local::local_resize,
+            local::local_close,
+            local::local_shells,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

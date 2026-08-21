@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
+import LocalTerminal from "./LocalTerminal";
 import S3Browser from "./S3Browser";
 import SplitLayout from "./SplitLayout";
 import OsIcon from "./osIcons";
@@ -43,7 +44,8 @@ type Tab =
       root: PaneNode;
       activePaneId: string;
     }
-  | { kind: "s3"; key: string; storageId: string; title: string };
+  | { kind: "s3"; key: string; storageId: string; title: string }
+  | { kind: "local"; key: string; title: string; shell?: string };
 
 let nextTabSeq = 1;
 let nextPaneSeq = 1;
@@ -111,6 +113,12 @@ function App() {
   function addS3Tab(storageId: string, title: string) {
     const key = `tab-${nextTabSeq++}`;
     setTabs((prev) => [...prev, { kind: "s3", key, storageId, title }]);
+    setActive(key);
+  }
+
+  function addLocalTab() {
+    const key = `tab-${nextTabSeq++}`;
+    setTabs((prev) => [...prev, { kind: "local", key, title: "Local shell" }]);
     setActive(key);
   }
 
@@ -249,6 +257,8 @@ function App() {
             >
               {t.kind === "ssh" ? (
                 <OsIcon os={leaves(t.root)[0]?.meta.os} size={16} />
+              ) : t.kind === "local" ? (
+                <SquareTerminal size={13} className="tab-kind-icon" />
               ) : (
                 <Cloud size={13} className="tab-kind-icon" />
               )}
@@ -275,6 +285,13 @@ function App() {
           onClick={() => setActive(null)}
         >
           <Plus size={15} />
+        </button>
+        <button
+          className="tab-new"
+          title="New local shell"
+          onClick={addLocalTab}
+        >
+          <SquareTerminal size={15} />
         </button>
         <div className="tab-bar-right">
           {activeTab?.kind === "ssh" && activePaneId && (
@@ -410,6 +427,12 @@ function App() {
                     }
                   />
                 )}
+              />
+            ) : t.kind === "local" ? (
+              <LocalTerminal
+                active={active === t.key}
+                shell={t.shell}
+                onExit={() => {}}
               />
             ) : (
               <S3Browser storageId={t.storageId} active={active === t.key} />
