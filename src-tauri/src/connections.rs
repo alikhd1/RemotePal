@@ -42,6 +42,9 @@ pub struct SavedConnection {
     /// local forwards started automatically on connect
     #[serde(default)]
     pub forwards: Vec<SavedForward>,
+    /// sidebar group ("" = ungrouped)
+    #[serde(default)]
+    pub group: String,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -313,6 +316,7 @@ mod tests {
             has_password: false,
             jump: String::new(),
             forwards: Vec::new(),
+            group: String::new(),
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();

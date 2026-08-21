@@ -37,6 +37,11 @@ function App() {
       ? [{ id: t.sshId, meta: t.meta }]
       : [],
   );
+  const activeSavedIds = new Set(
+    tabs.flatMap((t) =>
+      t.kind === "ssh" && !t.disconnected && t.savedId ? [t.savedId] : [],
+    ),
+  );
 
   function addSshTab(
     sshId: number,
@@ -241,7 +246,11 @@ function App() {
           className="pane-holder"
           style={{ display: active === null ? undefined : "none" }}
         >
-          <ConnectForm onConnected={addSshTab} onOpenS3={addS3Tab} />
+          <ConnectForm
+            onConnected={addSshTab}
+            onOpenS3={addS3Tab}
+            activeSavedIds={activeSavedIds}
+          />
         </div>
       </div>
     </div>

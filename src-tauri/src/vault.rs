@@ -244,7 +244,7 @@ pub fn export_backup(path: &str, password: &str) -> Result<(), String> {
                 user: c.user.clone(),
                 port: c.port,
                 key,
-                group: String::new(),
+                group: c.group.clone(),
                 jump: name_of.get(c.jump.as_str()).unwrap_or(&"").to_string(),
                 agent_forward: false,
             }
@@ -478,6 +478,7 @@ pub fn import_backup(path: &str, password: &str) -> Result<ImportSummary, String
                 has_password,
                 jump: String::new(),
                 forwards: Vec::new(),
+                group: server.group,
             });
             summary.connections += 1;
         }
@@ -576,6 +577,7 @@ mod tests {
                 has_password: false,
                 jump: String::new(),
                 forwards: Vec::new(),
+                group: String::new(),
             },
             SavedConnection {
                 id: "id-b".into(),
@@ -587,6 +589,7 @@ mod tests {
                 has_password: false,
                 jump: "id-a".into(),
                 forwards: Vec::new(),
+                group: String::new(),
             },
         ];
         connections::save_all(&conns).unwrap();

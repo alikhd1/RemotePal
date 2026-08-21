@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import S3Storages from "./S3Storages";
@@ -16,6 +16,7 @@ export interface SavedConnection {
   keyPath: string;
   hasPassword: boolean;
   jump: string;
+  group: string;
 }
 
 export interface HostKeyIssue {
@@ -53,9 +54,10 @@ interface Props {
     opts?: { openFiles?: boolean; savedId?: string },
   ) => void;
   onOpenS3: (storageId: string, title: string) => void;
+  activeSavedIds: Set<string>;
 }
 
-function ConnectForm({ onConnected, onOpenS3 }: Props) {
+function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
   const [importBump, setImportBump] = useState(0);
   const [saved, setSaved] = useState<SavedConnection[]>([]);
   const [vaultKeys, setVaultKeys] = useState<VaultKey[]>([]);
@@ -82,6 +84,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState("");
   const [jump, setJump] = useState("");
+  const [group, setGroup] = useState("");
   const [save, setSave] = useState(false);
   const [remember, setRemember] = useState(false);
 
@@ -195,6 +198,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
           keyPath: c.keyPath,
           hasPassword: false,
           jump: c.jump,
+          group: c.group,
         },
         password: "", // Some("") clears the stored password
       });
@@ -269,6 +273,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     setUser(c.user);
     setKeyPath(c.keyPath);
     setJump(c.jump || "");
+    setGroup(c.group || "");
     setPassword("");
     setSave(true);
     setRemember(false);
@@ -283,6 +288,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     setPassword("");
     setKeyPath("");
     setJump("");
+    setGroup("");
     setSave(false);
     setRemember(false);
   }
@@ -308,6 +314,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
             keyPath,
             hasPassword: false,
             jump,
+            group,
           },
           // Some(pw) stores, Some("") clears, null leaves untouched
           password: remember ? password : null,
@@ -341,6 +348,60 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     }
   }
 
+  function renderSavedItem(c: SavedConnection) {
+    return (
+      <li
+        className={"saved-item" + (busyId === c.id ? " busy" : "")}
+        onClick={() => connectSaved(c)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCtxMenu({ x: e.clientX, y: e.clientY, conn: c });
+        }}
+      >
+        <div className="saved-text">
+          <span className="saved-name">
+            {activeSavedIds.has(c.id) && (
+              <span className="saved-dot" title="Session open">
+                ●{" "}
+              </span>
+            )}
+            {busyId === c.id ? "Connecting…" : c.name}
+          </span>
+          <span className="saved-detail">
+            {c.user}@{c.host}:{c.port}
+            {c.hasPassword ? " · password" : c.keyPath ? " · key" : ""}
+          </span>
+        </div>
+        <span className="saved-actions">
+          <button
+            type="button"
+            title="Edit"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDeleteId(null);
+              editSaved(c);
+            }}
+          >
+            ✎
+          </button>
+          <button
+            type="button"
+            className={
+              "saved-delete" + (confirmDeleteId === c.id ? " confirming" : "")
+            }
+            title={confirmDeleteId === c.id ? "Click again to delete" : "Delete"}
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteSaved(c);
+            }}
+          >
+            {confirmDeleteId === c.id ? "sure?" : "×"}
+          </button>
+        </span>
+      </li>
+    );
+  }
+
   return (
     <div className="connect-screen">
       <div className="connect-layout">
@@ -351,56 +412,20 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
             <div className="saved-empty">No saved connections yet.</div>
           )}
           <ul className="saved-list">
-            {saved.map((c) => (
-              <li
-                key={c.id}
-                className={"saved-item" + (busyId === c.id ? " busy" : "")}
-                onClick={() => connectSaved(c)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setCtxMenu({ x: e.clientX, y: e.clientY, conn: c });
-                }}
-              >
-                <div className="saved-text">
-                  <span className="saved-name">
-                    {busyId === c.id ? "Connecting…" : c.name}
-                  </span>
-                  <span className="saved-detail">
-                    {c.user}@{c.host}:{c.port}
-                    {c.hasPassword ? " · password" : c.keyPath ? " · key" : ""}
-                  </span>
-                </div>
-                <span className="saved-actions">
-                  <button
-                    type="button"
-                    title="Edit"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDeleteId(null);
-                      editSaved(c);
-                    }}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      "saved-delete" +
-                      (confirmDeleteId === c.id ? " confirming" : "")
-                    }
-                    title={
-                      confirmDeleteId === c.id ? "Click again to delete" : "Delete"
-                    }
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteSaved(c);
-                    }}
-                  >
-                    {confirmDeleteId === c.id ? "sure?" : "×"}
-                  </button>
-                </span>
-              </li>
-            ))}
+            {[...saved]
+              .sort(
+                (a, b) =>
+                  (a.group || "").localeCompare(b.group || "") ||
+                  (a.name || "").localeCompare(b.name || ""),
+              )
+              .map((c, i, arr) => (
+                <Fragment key={c.id}>
+                  {c.group && (i === 0 || arr[i - 1].group !== c.group) && (
+                    <li className="saved-group">{c.group}</li>
+                  )}
+                  {renderSavedItem(c)}
+                </Fragment>
+              ))}
           </ul>
         </div>
         <S3Storages key={importBump} onOpen={onOpenS3} />
@@ -515,6 +540,22 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
                   onChange={(e) => setName(e.currentTarget.value)}
                   placeholder={user && host ? `${user}@${host}` : "My server"}
                 />
+              </label>
+              <label>
+                Group
+                <input
+                  value={group}
+                  onChange={(e) => setGroup(e.currentTarget.value)}
+                  placeholder="(optional)"
+                  list="saved-groups"
+                />
+                <datalist id="saved-groups">
+                  {[...new Set(saved.map((c) => c.group).filter(Boolean))].map(
+                    (g) => (
+                      <option key={g} value={g} />
+                    ),
+                  )}
+                </datalist>
               </label>
               <label className="check">
                 <input

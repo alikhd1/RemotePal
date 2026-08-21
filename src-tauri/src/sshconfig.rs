@@ -123,6 +123,7 @@ mod tests {
                 has_password: false,
                 jump: "b".into(),
                 forwards: Vec::new(),
+                group: String::new(),
             },
             SavedConnection {
                 id: "b".into(),
@@ -134,6 +135,7 @@ mod tests {
                 has_password: false,
                 jump: String::new(),
                 forwards: Vec::new(),
+                group: String::new(),
             },
         ];
         let block = block_for(&conns).join("\n");
