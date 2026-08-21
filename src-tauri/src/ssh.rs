@@ -98,22 +98,23 @@ pub async fn open_shell(
     Ok((session, channel))
 }
 
-#[tauri::command]
-pub async fn ssh_connect(
+/// Open a shell and wire up the session pump; shared by ad-hoc and
+/// saved-connection connects.
+pub async fn start_session(
     app: AppHandle,
-    state: State<'_, SshSessions>,
-    host: String,
+    sessions: &SshSessions,
+    host: &str,
     port: u16,
-    user: String,
+    user: &str,
     password: Option<String>,
     key_path: Option<String>,
 ) -> Result<u32, String> {
-    let (session, mut channel) = open_shell(&host, port, &user, password, key_path).await?;
+    let (session, mut channel) = open_shell(host, port, user, password, key_path).await?;
 
-    let id = state.counter.fetch_add(1, Ordering::Relaxed) + 1;
+    let id = sessions.counter.fetch_add(1, Ordering::Relaxed) + 1;
     let (tx, mut rx) = mpsc::unbounded_channel::<TermCmd>();
-    state.senders.lock().unwrap().insert(id, tx);
-    let senders = Arc::clone(&state.senders);
+    sessions.senders.lock().unwrap().insert(id, tx);
+    let senders = Arc::clone(&sessions.senders);
 
     tauri::async_runtime::spawn(async move {
         loop {
@@ -149,6 +150,19 @@ pub async fn ssh_connect(
     });
 
     Ok(id)
+}
+
+#[tauri::command]
+pub async fn ssh_connect(
+    app: AppHandle,
+    state: State<'_, SshSessions>,
+    host: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+    key_path: Option<String>,
+) -> Result<u32, String> {
+    start_session(app, &state, &host, port, &user, password, key_path).await
 }
 
 fn send_cmd(state: &State<'_, SshSessions>, id: u32, cmd: TermCmd) -> Result<(), String> {

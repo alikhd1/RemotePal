@@ -26,4 +26,7 @@ serde_json = "1"
 russh = { version = "0.63.0", default-features = false, features = ["ring", "flate2", "rsa"] }
 tokio = { version = "1.53.1", features = ["sync", "rt", "macros", "time", "io-util"] }
 base64 = "0.23.1"
+dirs = "6.0.0"
+uuid = { version = "1.24.1", features = ["v4"] }
+keyring = "4.1.6"
 

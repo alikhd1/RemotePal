@@ -31,6 +31,147 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
+}
+
+.connect-layout {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+/* ------------------------------------------------- saved connections */
+
+.saved-panel {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.saved-panel h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+}
+
+.saved-empty {
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.saved-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.saved-item:hover {
+  background: rgba(97, 175, 239, 0.12);
+}
+
+.saved-item.busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.saved-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.saved-name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-detail {
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-actions {
+  display: none;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.saved-item:hover .saved-actions {
+  display: flex;
+}
+
+.saved-actions button {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.saved-actions button:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.saved-delete.confirming {
+  color: #1e1e1e;
+  background: var(--danger);
+}
+
+.saved-delete.confirming:hover {
+  color: #1e1e1e;
+  background: var(--danger);
+}
+
+.link-btn {
+  align-self: flex-start;
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.editing-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
 }
 
 .connect-form {
@@ -103,6 +244,15 @@ body,
   cursor: default;
 }
 
+.connect-form .check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
 .connect-error {
   padding: 8px 10px;
   font-size: 13px;
@@ -111,6 +261,15 @@ body,
   border: 1px solid rgba(224, 108, 117, 0.4);
   border-radius: 6px;
   word-break: break-word;
+}
+
+.connect-notice {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+  border: 1px solid rgba(152, 195, 121, 0.4);
+  border-radius: 6px;
 }
 
 /* --------------------------------------------------------- layout */

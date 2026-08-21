@@ -11,8 +11,12 @@ Early. Working so far:
 - Live PTY resize, disconnect banner
 - Session tabs: multiple concurrent connections, "+" tab for new sessions,
   disconnect indicator; hidden sessions stay connected
+- Saved connections: metadata in `~/.remotepal/connections.json`, passwords
+  in the Windows Credential Manager (never on disk); one-click connect,
+  edit/delete, and read-only import from the PyQt app's servers.json
+  (passwords and jump hosts are not imported)
 
-Not yet ported from the PyQt app: vault, saved connections, SFTP/S3 browsers, folder sync, port forwards, themes.
+Not yet ported from the PyQt app: vault encryption/backup, SFTP/S3 browsers, folder sync, port forwards, jump hosts, themes.
 
 **Known gap:** host keys are currently accepted blindly (`check_server_key` returns true). Needs known_hosts verification before real use.
 
