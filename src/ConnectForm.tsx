@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ArchiveRestore,
+  Bot,
   ChevronRight,
   Cloud,
   CornerDownLeft,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import S3Storages from "./S3Storages";
 import VaultCard from "./VaultCard";
+import AiCard from "./AiCard";
 import KeysCard, { type VaultKey } from "./KeysCard";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import OsIcon, { OS_CHOICES } from "./osIcons";
@@ -101,7 +103,7 @@ export function parseQuickConnect(
   return { user: m[1], host, port };
 }
 
-type Section = "hosts" | "keys" | "s3" | "backup";
+type Section = "hosts" | "keys" | "s3" | "backup" | "ai";
 type ViewMode = "grid" | "list";
 
 const VIEW_KEY = "remotepal-hosts-view";
@@ -748,6 +750,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     { key: "keys", label: "SSH Keys", icon: <KeyRound size={17} /> },
     { key: "s3", label: "S3 Storage", icon: <Cloud size={17} /> },
     { key: "backup", label: "Backup", icon: <ArchiveRestore size={17} /> },
+    { key: "ai", label: "AI Copilot", icon: <Bot size={17} /> },
   ];
 
   return (
@@ -792,6 +795,11 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
                 setImportBump((n) => n + 1);
               }}
             />
+          </div>
+        )}
+        {section === "ai" && (
+          <div className="home-cards">
+            <AiCard />
           </div>
         )}
       </main>

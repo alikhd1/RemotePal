@@ -341,42 +341,103 @@ pub async fn connect_chain(specs: &[ConnectSpec]) -> Result<Vec<Arc<SshHandle>>,
     Ok(chain)
 }
 
-/// Run one command on a session, returning (exit status, stdout, stderr).
-pub async fn exec_capture(
+/// Captured result of a one-off command run over a dedicated exec channel.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecCapture {
+    pub exit_code: u32,
+    pub stdout: String,
+    pub stderr: String,
+    /// output was clipped at the combined byte cap
+    pub truncated: bool,
+}
+
+/// Core exec: run one command over a fresh channel, capturing both
+/// streams, with a configurable timeout and a combined byte cap. Bytes
+/// are collected raw and decoded once at the end (so a multibyte char
+/// split across chunks isn't corrupted). Output is `trim_end`ed only.
+pub async fn exec_capture_capped(
     handle: &SshHandle,
     command: &str,
-) -> Result<(u32, String, String), String> {
+    timeout: std::time::Duration,
+    max_bytes: usize,
+) -> Result<ExecCapture, String> {
     let mut channel = handle
         .channel_open_session()
         .await
         .map_err(|e| e.to_string())?;
     channel.exec(true, command).await.map_err(|e| e.to_string())?;
-    let mut stdout = String::new();
-    let mut stderr = String::new();
+
+    let mut stdout: Vec<u8> = Vec::new();
+    let mut stderr: Vec<u8> = Vec::new();
     let mut status: Option<u32> = None;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut truncated = false;
+    let deadline = tokio::time::Instant::now() + timeout;
+
+    // Append `data` to `buf`, honoring a cap on total(stdout)+total(stderr).
+    let append = |buf: &mut Vec<u8>, other_len: usize, data: &[u8], truncated: &mut bool| {
+        let used = buf.len() + other_len;
+        if used >= max_bytes {
+            *truncated = true;
+            return;
+        }
+        let room = max_bytes - used;
+        if data.len() > room {
+            buf.extend_from_slice(&data[..room]);
+            *truncated = true;
+        } else {
+            buf.extend_from_slice(data);
+        }
+    };
+
     loop {
         let msg = tokio::time::timeout_at(deadline, channel.wait())
             .await
             .map_err(|_| "remote command timed out".to_string())?;
         match msg {
             Some(ChannelMsg::Data { ref data }) => {
-                stdout.push_str(&String::from_utf8_lossy(&data[..]));
+                let n = stderr.len();
+                append(&mut stdout, n, data, &mut truncated);
             }
             Some(ChannelMsg::ExtendedData { ref data, .. }) => {
-                stderr.push_str(&String::from_utf8_lossy(&data[..]));
+                let n = stdout.len();
+                append(&mut stderr, n, data, &mut truncated);
             }
             Some(ChannelMsg::ExitStatus { exit_status }) => status = Some(exit_status),
             Some(ChannelMsg::Close) if status.is_some() => break,
             None => break,
             _ => {}
         }
+        if truncated {
+            // stop the remote streaming more than we'll keep
+            let _ = channel.close().await;
+            break;
+        }
     }
-    Ok((
-        status.unwrap_or(255),
-        stdout.trim().to_string(),
-        stderr.trim().to_string(),
-    ))
+
+    Ok(ExecCapture {
+        exit_code: status.unwrap_or(255),
+        stdout: String::from_utf8_lossy(&stdout).trim_end().to_string(),
+        stderr: String::from_utf8_lossy(&stderr).trim_end().to_string(),
+        truncated,
+    })
+}
+
+/// Run one command on a session, returning (exit status, stdout, stderr).
+/// Fully trimmed, 20s timeout, no size cap — the shape existing callers
+/// (`exec_on`, OS detection) expect.
+pub async fn exec_capture(
+    handle: &SshHandle,
+    command: &str,
+) -> Result<(u32, String, String), String> {
+    let c = exec_capture_capped(
+        handle,
+        command,
+        std::time::Duration::from_secs(20),
+        usize::MAX,
+    )
+    .await?;
+    Ok((c.exit_code, c.stdout.trim().to_string(), c.stderr.trim().to_string()))
 }
 
 /// Run one command on a session, returning (exit status, stderr).

@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod connections;
 pub mod forwards;
 pub mod keys;
@@ -18,6 +19,7 @@ pub fn run() {
         .manage(s3::S3StoreLock::default())
         .manage(s3::S3EditState::default())
         .manage(forwards::Forwards::default())
+        .manage(ai::AiState::default())
         .invoke_handler(tauri::generate_handler![
             ssh::ssh_connect,
             ssh::ssh_write,
@@ -70,6 +72,11 @@ pub fn run() {
             vault::snippets_save,
             vault::vault_export,
             vault::vault_import,
+            ai::ai_key_save,
+            ai::ai_key_status,
+            ai::ai_chat,
+            ai::ai_cancel,
+            ai::ai_exec,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

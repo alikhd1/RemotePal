@@ -8,10 +8,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
+import AiPanel from "./AiPanel";
 import SnippetsPanel, {
   type LiveSession,
   type SessionMeta,
 } from "./SnippetsPanel";
+import { registerTerminal, unregisterTerminal } from "./terminalRegistry";
 import { getTermTheme, subscribeTheme } from "./themes";
 import "@xterm/xterm/css/xterm.css";
 
@@ -30,6 +32,7 @@ interface Props {
   showFiles: boolean;
   showForwards: boolean;
   showSnippets: boolean;
+  showAi: boolean;
   meta: SessionMeta;
   savedConnId?: string;
   allSessions: LiveSession[];
@@ -47,6 +50,7 @@ function TerminalPane({
   showFiles,
   showForwards,
   showSnippets,
+  showAi,
   meta,
   savedConnId,
   allSessions,
@@ -96,6 +100,8 @@ function TerminalPane({
     termRef.current = term;
     fitRef.current = fit;
     searchRef.current = search;
+    // expose this buffer to the AI panel's read_terminal tool
+    registerTerminal(id, term);
     import("@xterm/addon-webgl").then(({ WebglAddon }) => {
       try {
         term.loadAddon(new WebglAddon());
@@ -173,6 +179,7 @@ function TerminalPane({
       resizeSub.dispose();
       unlisteners.forEach((p) => p.then((un) => un()));
       invoke("ssh_disconnect", { id }).catch(() => {});
+      unregisterTerminal(id);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -287,6 +294,9 @@ function TerminalPane({
       <div className="term-row">
         <div ref={containerRef} className="term-container" />
         {showFiles && <FileBrowser sessionId={id} active={active} />}
+        {showAi && (
+          <AiPanel sessionId={id} meta={meta} allSessions={allSessions} />
+        )}
       </div>
     </div>
   );

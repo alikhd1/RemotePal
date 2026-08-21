@@ -45,6 +45,7 @@ function App() {
   const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
   const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
   const [snippetsOpen, setSnippetsOpen] = useState<Set<string>>(new Set());
+  const [aiOpen, setAiOpen] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(currentTheme());
   const [splitError, setSplitError] = useState<string | null>(null);
 
@@ -103,7 +104,12 @@ function App() {
   }
 
   function forgetPanes(paneIds: string[]) {
-    for (const setter of [setFilesOpen, setForwardsOpen, setSnippetsOpen]) {
+    for (const setter of [
+      setFilesOpen,
+      setForwardsOpen,
+      setSnippetsOpen,
+      setAiOpen,
+    ]) {
       setter((prev) => {
         const next = new Set(prev);
         paneIds.forEach((id) => next.delete(id));
@@ -305,6 +311,15 @@ function App() {
               >
                 Files
               </button>
+              <button
+                className={
+                  "files-toggle" + (aiOpen.has(activePaneId) ? " active" : "")
+                }
+                title="Toggle AI copilot"
+                onClick={() => toggleIn(setAiOpen, activePaneId)}
+              >
+                AI
+              </button>
             </>
           )}
           <Select
@@ -366,6 +381,7 @@ function App() {
                     showFiles={filesOpen.has(pane.paneId)}
                     showForwards={forwardsOpen.has(pane.paneId)}
                     showSnippets={snippetsOpen.has(pane.paneId)}
+                    showAi={aiOpen.has(pane.paneId)}
                     meta={pane.meta}
                     savedConnId={pane.savedId}
                     allSessions={liveSessions}

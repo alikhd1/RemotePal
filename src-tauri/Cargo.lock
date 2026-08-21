@@ -4074,6 +4074,7 @@ dependencies = [
  "flate2",
  "keyring",
  "notify",
+ "reqwest 0.12.28",
  "ring",
  "russh",
  "russh-sftp",

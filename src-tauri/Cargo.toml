@@ -40,4 +40,7 @@ flate2 = "1.1.9"
 ring = "0.17.14"
 aes = "0.9.2"
 cbc = { version = "0.2.1", features = ["alloc", "block-padding"] }
+# native-tls (SChannel on Windows) matches rust-s3's tokio-native-tls; do not
+# pull rustls — a second TLS stack. russh's `ring` is SSH crypto only.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json", "stream"] }
 
