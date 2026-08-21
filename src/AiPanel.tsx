@@ -24,6 +24,7 @@ import { Select } from "./Dropdown";
 import {
   Bookmark,
   Check,
+  KeyRound,
   RotateCw,
   SendHorizontal,
   Square,
@@ -90,6 +91,12 @@ function AiPanel({ sessionId, allSessions }: Props) {
     command: string;
     name: string;
   } | null>(null);
+  // inline "this provider has no key yet" entry, so picking a provider
+  // mid-conversation doesn't send you to the connect screen
+  const [keyPrompt, setKeyPrompt] = useState<{
+    provider: string;
+    value: string;
+  } | null>(null);
 
   // canonical conversation + loop bookkeeping live in refs so the async
   // loop (which suspends across a human approval) never reads stale state
@@ -128,13 +135,38 @@ function AiPanel({ sessionId, allSessions }: Props) {
     setProvider(id); // persist so settings + other panels agree
     setProviderState(id);
     setError(null);
-    checkKey(id);
+    setKeyPrompt(null);
+    if (providerDef(id).requiresKey === false) {
+      setKeyMissing(false);
+      return;
+    }
+    invoke<boolean>("ai_key_status", { provider: id })
+      .then((present) => {
+        setKeyMissing(!present);
+        // ask for it right here rather than sending them elsewhere
+        if (!present) setKeyPrompt({ provider: id, value: "" });
+      })
+      .catch(() => {});
+  }
+
+  async function saveKeyPrompt() {
+    if (!keyPrompt) return;
+    const value = keyPrompt.value.trim();
+    if (!value) return;
+    try {
+      await invoke("ai_key_save", { key: value, provider: keyPrompt.provider });
+      setKeyMissing(false);
+      setNotice(`${providerDef(keyPrompt.provider).label} key saved.`);
+      setKeyPrompt(null);
+    } catch (err) {
+      setError(String(err));
+    }
   }
 
   const msgsEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     msgsEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, live, pending, snippetFor]);
+  }, [messages, live, pending, snippetFor, keyPrompt]);
 
   function sync() {
     setMessages([...convoRef.current]);
@@ -359,6 +391,11 @@ function AiPanel({ sessionId, allSessions }: Props) {
   async function send() {
     const text = input.trim();
     if (!text || status === "streaming" || status === "running_tool") return;
+    // no point sending a turn that will just fail on a missing key
+    if (keyMissing && providerDef(providerRef.current).requiresKey !== false) {
+      setKeyPrompt({ provider: providerRef.current, value: "" });
+      return;
+    }
     setInput("");
     setNotice(null);
     autoRoundsRef.current = 0;
@@ -584,11 +621,59 @@ function AiPanel({ sessionId, allSessions }: Props) {
             )}
           </div>
         )}
-        {keyMissing && (
-          <div className="ai-notice">
-            No API key set for this provider. Add one in the AI settings on the
-            connect screen.
+        {keyPrompt && (
+          <div className="ai-approval">
+            <div className="ai-approval-head">
+              <KeyRound size={13} />
+              {providerDef(keyPrompt.provider).label} needs an API key
+            </div>
+            <div className="ai-approval-reason">
+              Stored in your OS credential store, never in the app's files.
+            </div>
+            <input
+              type="password"
+              className="ai-snippet-name"
+              autoFocus
+              value={keyPrompt.value}
+              placeholder={`${providerDef(keyPrompt.provider).label} API key`}
+              onChange={(e) =>
+                setKeyPrompt({ ...keyPrompt, value: e.currentTarget.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveKeyPrompt();
+                } else if (e.key === "Escape") {
+                  setKeyPrompt(null);
+                }
+              }}
+            />
+            <div className="ai-approval-btns">
+              <button
+                className="accent-btn"
+                onClick={saveKeyPrompt}
+                disabled={!keyPrompt.value.trim()}
+              >
+                <Check size={13} />
+                Save key
+              </button>
+              <button className="link-btn" onClick={() => setKeyPrompt(null)}>
+                <X size={13} />
+                Cancel
+              </button>
+            </div>
           </div>
+        )}
+        {keyMissing && !keyPrompt && (
+          <button
+            type="button"
+            className="ai-notice ai-notice-action"
+            onClick={() =>
+              setKeyPrompt({ provider: providerRef.current, value: "" })
+            }
+          >
+            No API key set for this provider — click to add one.
+          </button>
         )}
         <div ref={msgsEndRef} />
       </div>

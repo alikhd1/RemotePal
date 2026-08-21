@@ -2525,6 +2525,25 @@ body,
   padding: 2px;
 }
 
+/* a notice that is also the way to fix what it reports */
+.ai-notice-action {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ai-notice-action:hover {
+  text-decoration: underline;
+}
+
+.ai-approval-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .ai-input-row {
   border-top: 1px solid var(--border);
   padding: 8px;
