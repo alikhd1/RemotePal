@@ -269,6 +269,50 @@ body,
   cursor: pointer;
 }
 
+/* ------------------------------------------------------ context menu */
+
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+
+.context-menu-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.context-menu-item:hover {
+  background: rgba(97, 175, 239, 0.15);
+}
+
+.context-menu-item.danger {
+  color: var(--danger);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(224, 108, 117, 0.15);
+}
+
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+}
+
 /* --------------------------------------------------- host key dialog */
 
 .modal-overlay {

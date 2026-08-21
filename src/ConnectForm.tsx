@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import S3Storages from "./S3Storages";
 import VaultCard from "./VaultCard";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 import type { SessionMeta } from "./SnippetsPanel";
 
 export interface SavedConnection {
@@ -43,7 +44,12 @@ function errMessage(err: unknown): string {
 }
 
 interface Props {
-  onConnected: (id: number, title: string, meta: SessionMeta) => void;
+  onConnected: (
+    id: number,
+    title: string,
+    meta: SessionMeta,
+    opts?: { openFiles?: boolean },
+  ) => void;
   onOpenS3: (storageId: string, title: string) => void;
 }
 
@@ -57,6 +63,11 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [hostKeyPrompt, setHostKeyPrompt] = useState<{
     issue: HostKeyIssue;
     retry: () => void;
+  } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    conn: SavedConnection;
   } | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -82,18 +93,26 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     refresh();
   }, []);
 
-  async function connectSaved(c: SavedConnection) {
+  async function connectSaved(
+    c: SavedConnection,
+    opts?: { openFiles?: boolean },
+  ) {
     if (busyId) return;
     setBusyId(c.id);
     setError(null);
     try {
       const id = await invoke<number>("ssh_connect_saved", { id: c.id });
-      onConnected(id, c.name || `${c.user}@${c.host}`, {
-        host: c.host,
-        user: c.user,
-        port: c.port,
-        name: c.name || `${c.user}@${c.host}`,
-      });
+      onConnected(
+        id,
+        c.name || `${c.user}@${c.host}`,
+        {
+          host: c.host,
+          user: c.user,
+          port: c.port,
+          name: c.name || `${c.user}@${c.host}`,
+        },
+        opts,
+      );
     } catch (err) {
       const issue = asHostKeyIssue(err);
       if (issue) {
@@ -121,6 +140,61 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
       return;
     }
     retry();
+  }
+
+  async function forgetPassword(c: SavedConnection) {
+    setError(null);
+    try {
+      await invoke("connection_save", {
+        conn: {
+          id: c.id,
+          name: c.name,
+          host: c.host,
+          port: c.port,
+          user: c.user,
+          keyPath: c.keyPath,
+          hasPassword: false,
+          jump: c.jump,
+        },
+        password: "", // Some("") clears the stored password
+      });
+      refresh();
+    } catch (err) {
+      setError(errMessage(err));
+    }
+  }
+
+  function menuItems(c: SavedConnection): MenuItem[] {
+    const items: MenuItem[] = [
+      { label: "Connect", onClick: () => connectSaved(c) },
+      {
+        label: "Connect + browse files",
+        onClick: () => connectSaved(c, { openFiles: true }),
+      },
+    ];
+    if (c.hasPassword) {
+      items.push({
+        label: "Forget saved password",
+        onClick: () => forgetPassword(c),
+      });
+    }
+    items.push(
+      { label: "", separator: true },
+      {
+        label: "Edit…",
+        onClick: () => {
+          setConfirmDeleteId(null);
+          editSaved(c);
+        },
+      },
+      {
+        label: "Remove…",
+        danger: true,
+        // arms the row's red "sure?" button instead of deleting blind
+        onClick: () => setConfirmDeleteId(c.id),
+      },
+    );
+    return items;
   }
 
   async function deleteSaved(c: SavedConnection) {
@@ -233,6 +307,10 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
                 key={c.id}
                 className={"saved-item" + (busyId === c.id ? " busy" : "")}
                 onClick={() => connectSaved(c)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setCtxMenu({ x: e.clientX, y: e.clientY, conn: c });
+                }}
               >
                 <div className="saved-text">
                   <span className="saved-name">
@@ -396,6 +474,15 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
           {error && <div className="connect-error">{error}</div>}
         </form>
       </div>
+
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={menuItems(ctxMenu.conn)}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
 
       {hostKeyPrompt && (
         <div className="modal-overlay">

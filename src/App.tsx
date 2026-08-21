@@ -32,12 +32,20 @@ function App() {
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
 
-  function addSshTab(sshId: number, title: string, meta: SessionMeta) {
+  function addSshTab(
+    sshId: number,
+    title: string,
+    meta: SessionMeta,
+    opts?: { openFiles?: boolean },
+  ) {
     const key = `ssh-${sshId}`;
     setTabs((prev) => [
       ...prev,
       { kind: "ssh", key, sshId, title, meta, disconnected: false },
     ]);
+    if (opts?.openFiles) {
+      setFilesOpen((prev) => new Set(prev).add(key));
+    }
     setActive(key);
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 export interface S3Storage {
   id: string;
@@ -20,6 +21,11 @@ function S3Storages({ onOpen }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    storage: S3Storage;
+  } | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -119,6 +125,10 @@ function S3Storages({ onOpen }: Props) {
             key={s.id}
             className="saved-item"
             onClick={() => onOpen(s.id, s.name || s.bucket)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu({ x: e.clientX, y: e.clientY, storage: s });
+            }}
           >
             <div className="saved-text">
               <span className="saved-name">{s.name || s.bucket}</span>
@@ -246,6 +256,35 @@ function S3Storages({ onOpen }: Props) {
         </button>
       )}
       {error && <div className="connect-error">{error}</div>}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={
+            [
+              {
+                label: "Open browser",
+                onClick: () =>
+                  onOpen(ctxMenu.storage.id, ctxMenu.storage.name || ctxMenu.storage.bucket),
+              },
+              { label: "", separator: true },
+              {
+                label: "Edit…",
+                onClick: () => {
+                  setConfirmDeleteId(null);
+                  edit(ctxMenu.storage);
+                },
+              },
+              {
+                label: "Remove…",
+                danger: true,
+                onClick: () => setConfirmDeleteId(ctxMenu.storage.id),
+              },
+            ] satisfies MenuItem[]
+          }
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }
