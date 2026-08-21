@@ -14,7 +14,7 @@ async fn main() {
     let port: u16 = args.next().expect(usage).parse().expect(usage);
     let password = args.next().expect(usage);
 
-    let (session, mut channel) = remotepal_tauri_lib::ssh::open_shell(
+    let (session, mut channel) = remotepal_lib::ssh::open_shell(
         "127.0.0.1",
         port,
         "demo",
