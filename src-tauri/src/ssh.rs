@@ -744,6 +744,30 @@ fn send_cmd(state: &State<'_, SshSessions>, id: u32, cmd: TermCmd) -> Result<(),
     tx.send(cmd).map_err(|_| "session closed".to_string())
 }
 
+/// Type a saved connection's password into the session, followed by
+/// Enter — for the remote's own prompts (sudo, su, a password-protected
+/// command). The secret goes from the credential store straight to the
+/// channel and is never returned to the frontend, which only asks for it
+/// by connection id.
+#[tauri::command]
+pub fn ssh_send_saved_password(
+    state: State<'_, SshSessions>,
+    id: u32,
+    conn_id: String,
+) -> Result<(), String> {
+    let password = keyring::Entry::new(crate::connections::KEYRING_SERVICE, &conn_id)
+        .and_then(|e| e.get_password())
+        .map_err(|_| "no password saved for this connection".to_string())?;
+    if password.is_empty() {
+        return Err("no password saved for this connection".to_string());
+    }
+    send_cmd(
+        &state,
+        id,
+        TermCmd::Data(format!("{password}\n").into_bytes()),
+    )
+}
+
 #[tauri::command]
 pub fn ssh_write(state: State<'_, SshSessions>, id: u32, data: String) -> Result<(), String> {
     send_cmd(&state, id, TermCmd::Data(data.into_bytes()))

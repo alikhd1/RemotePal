@@ -19,6 +19,18 @@ import { registerTerminal, unregisterTerminal } from "./terminalRegistry";
 import { getTermTheme, subscribeTheme } from "./themes";
 import "@xterm/xterm/css/xterm.css";
 
+/// Password prompts we answer: sudo, su, and OpenSSH's own. Anchored to
+/// the end of the output because the remote is sitting at the prompt
+/// waiting for input when it matches.
+const PASSWORD_PROMPT =
+  /(?:\[sudo\]\s*password\s*for\s*\S+|\S+@\S+'s\s*password|password(?:\s*for\s*\S+)?)\s*:\s*$/i;
+
+/// Strip ANSI escapes so styled prompts still match.
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\r/g, "");
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -35,6 +47,8 @@ interface Props {
   showForwards: boolean;
   showSnippets: boolean;
   showAi: boolean;
+  /** answer the remote's password prompts with the saved password */
+  autoPassword: boolean;
   meta: SessionMeta;
   savedConnId?: string;
   allSessions: LiveSession[];
@@ -53,6 +67,7 @@ function TerminalPane({
   showForwards,
   showSnippets,
   showAi,
+  autoPassword,
   meta,
   savedConnId,
   allSessions,
@@ -79,6 +94,20 @@ function TerminalPane({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [disconnected, setDisconnected] = useState(false);
+  const [pwNotice, setPwNotice] = useState<string | null>(null);
+
+  // auto password answering: read through refs so the session-lifetime
+  // effect doesn't need to re-run when the toggle flips
+  const autoPasswordRef = useRef(autoPassword);
+  autoPasswordRef.current = autoPassword;
+  const savedConnIdRef = useRef(savedConnId);
+  savedConnIdRef.current = savedConnId;
+  /** tail of recent output, matched against the prompt pattern */
+  const tailRef = useRef("");
+  /** consecutive answers without the user typing — a wrong password
+   *  would otherwise loop forever against a re-asking prompt */
+  const pwTriesRef = useRef(0);
+  const pwUntilRef = useRef(0);
 
   useEffect(() => {
     const el = containerRef.current!;
@@ -149,8 +178,41 @@ function TerminalPane({
     el.addEventListener("wheel", onWheel, { passive: false });
 
     const dataSub = term.onData((data) => {
+      // the user taking over resets the wrong-password guard
+      pwTriesRef.current = 0;
+      setPwNotice(null);
       invoke("ssh_write", { id, data }).catch(() => {});
     });
+
+    /// Watch output for a password prompt and answer it from the saved
+    /// credential. The password itself lives in the backend — we only
+    /// tell it which connection to use.
+    const decoder = new TextDecoder();
+    function maybeAnswerPassword(bytes: Uint8Array) {
+      const connId = savedConnIdRef.current;
+      if (!autoPasswordRef.current || !connId) return;
+
+      tailRef.current = (
+        tailRef.current + stripAnsi(decoder.decode(bytes, { stream: true }))
+      ).slice(-200);
+
+      const line = tailRef.current.split("\n").pop() ?? "";
+      if (!PASSWORD_PROMPT.test(line)) return;
+      if (Date.now() < pwUntilRef.current) return; // still settling
+
+      if (pwTriesRef.current >= 2) {
+        setPwNotice(
+          "Saved password was not accepted — type it yourself, or turn auto password off.",
+        );
+        return;
+      }
+      pwTriesRef.current += 1;
+      pwUntilRef.current = Date.now() + 1500;
+      tailRef.current = "";
+      invoke("ssh_send_saved_password", { id, connId }).catch((err) =>
+        setPwNotice(String(err)),
+      );
+    }
     const resizeSub = term.onResize(({ cols, rows }) => {
       invoke("ssh_resize", { id, cols, rows }).catch(() => {});
     });
@@ -159,9 +221,11 @@ function TerminalPane({
     );
 
     const unlisteners: Promise<UnlistenFn>[] = [
-      listen<string>(`ssh-data-${id}`, (e) =>
-        term.write(base64ToBytes(e.payload)),
-      ),
+      listen<string>(`ssh-data-${id}`, (e) => {
+        const bytes = base64ToBytes(e.payload);
+        term.write(bytes);
+        maybeAnswerPassword(bytes);
+      }),
       listen(`ssh-closed-${id}`, () => {
         setDisconnected(true);
         onDisconnectedRef.current();
@@ -287,6 +351,7 @@ function TerminalPane({
           </button>
         </div>
       )}
+      {pwNotice && <div className="files-error">{pwNotice}</div>}
       {showSnippets && (
         <SnippetsPanel sessionId={id} meta={meta} allSessions={allSessions} />
       )}

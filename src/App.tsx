@@ -5,6 +5,7 @@ import {
   Cloud,
   Columns2,
   FolderClosed,
+  KeyRound,
   Network,
   Plus,
   Rows2,
@@ -59,6 +60,7 @@ function App() {
   const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
   const [snippetsOpen, setSnippetsOpen] = useState<Set<string>>(new Set());
   const [aiOpen, setAiOpen] = useState<Set<string>>(new Set());
+  const [autoPwOpen, setAutoPwOpen] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(currentTheme());
   const [splitError, setSplitError] = useState<string | null>(null);
 
@@ -128,6 +130,7 @@ function App() {
       setForwardsOpen,
       setSnippetsOpen,
       setAiOpen,
+      setAutoPwOpen,
     ]) {
       setter((prev) => {
         const next = new Set(prev);
@@ -344,6 +347,16 @@ function App() {
               </button>
               <button
                 className={
+                  "files-toggle icon-only" +
+                  (autoPwOpen.has(activePaneId) ? " active" : "")
+                }
+                title="Auto-answer password prompts with this connection's saved password"
+                onClick={() => toggleIn(setAutoPwOpen, activePaneId)}
+              >
+                <KeyRound size={15} />
+              </button>
+              <button
+                className={
                   "files-toggle ai-toggle" +
                   (aiOpen.has(activePaneId) ? " active" : "")
                 }
@@ -415,6 +428,7 @@ function App() {
                     showForwards={forwardsOpen.has(pane.paneId)}
                     showSnippets={snippetsOpen.has(pane.paneId)}
                     showAi={aiOpen.has(pane.paneId)}
+                    autoPassword={autoPwOpen.has(pane.paneId)}
                     meta={pane.meta}
                     savedConnId={pane.savedId}
                     allSessions={liveSessions}
