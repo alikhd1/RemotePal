@@ -137,7 +137,12 @@ function AiCard() {
         <div className="ai-endpoint">{def.baseUrl}</div>
       )}
 
-      <label className="ai-field-label">API key</label>
+      <label className="ai-field-label">
+        API key
+        {def.requiresKey === false && (
+          <span className="si-dim"> — not required for this provider</span>
+        )}
+      </label>
       <input
         type="password"
         className="vault-pass"

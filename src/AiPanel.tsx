@@ -100,6 +100,10 @@ function AiPanel({ sessionId, allSessions }: Props) {
   targetRef.current = target;
 
   function checkKey(p: string) {
+    if (providerDef(p).requiresKey === false) {
+      setKeyMissing(false); // local runtimes need no key
+      return;
+    }
     invoke<boolean>("ai_key_status", { provider: p })
       .then((present) => setKeyMissing(!present))
       .catch(() => {});
@@ -166,6 +170,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
         kind: def.kind,
         baseUrl: def.baseUrl,
         model: getModel(pid),
+        requiresKey: def.requiresKey !== false,
         context: {
           panel_session_id: targetRef.current,
           sessions: allSessionsRef.current.map((s) => ({

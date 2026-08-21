@@ -14,8 +14,14 @@ export interface ProviderDef {
   baseUrl?: string;
   defaultModel: string;
   builtin?: boolean;
+  /** false for local runtimes (Ollama) that need no API key */
+  requiresKey?: boolean;
 }
 
+// Every provider below except Anthropic speaks the OpenAI Chat
+// Completions protocol, so they all run through the same adapter — only
+// the endpoint and default model differ. Models are editable per
+// provider in the settings card.
 const BUILTINS: ProviderDef[] = [
   {
     id: "anthropic",
@@ -25,12 +31,71 @@ const BUILTINS: ProviderDef[] = [
     builtin: true,
   },
   {
+    id: "openai",
+    label: "OpenAI",
+    kind: "openai",
+    baseUrl: "https://api.openai.com/v1/chat/completions",
+    defaultModel: "gpt-4o",
+    builtin: true,
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    kind: "openai",
+    baseUrl: "https://api.deepseek.com/chat/completions",
+    defaultModel: "deepseek-chat",
+    builtin: true,
+  },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    kind: "openai",
+    // Google's OpenAI-compatible surface
+    baseUrl:
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    defaultModel: "gemini-2.0-flash",
+    builtin: true,
+  },
+  {
+    id: "grok",
+    label: "xAI Grok",
+    kind: "openai",
+    baseUrl: "https://api.x.ai/v1/chat/completions",
+    defaultModel: "grok-2-latest",
+    builtin: true,
+  },
+  {
+    id: "groq",
+    label: "Groq",
+    kind: "openai",
+    baseUrl: "https://api.groq.com/openai/v1/chat/completions",
+    defaultModel: "llama-3.3-70b-versatile",
+    builtin: true,
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    kind: "openai",
+    baseUrl: "https://openrouter.ai/api/v1/chat/completions",
+    defaultModel: "openai/gpt-4o",
+    builtin: true,
+  },
+  {
     id: "gapgpt",
     label: "GapGPT",
     kind: "openai",
     baseUrl: "https://api.gapgpt.app/v1/chat/completions",
     defaultModel: "gpt-4o",
     builtin: true,
+  },
+  {
+    id: "ollama",
+    label: "Ollama (local)",
+    kind: "openai",
+    baseUrl: "http://localhost:11434/v1/chat/completions",
+    defaultModel: "llama3.1",
+    builtin: true,
+    requiresKey: false,
   },
 ];
 

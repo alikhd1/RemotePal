@@ -558,10 +558,11 @@ async fn openai_compatible_stream(
         body["tool_choice"] = json!("auto");
     }
 
-    let resp = client
-        .post(url)
-        .header("authorization", format!("Bearer {api_key}"))
-        .header("content-type", "application/json")
+    let mut req = client.post(url).header("content-type", "application/json");
+    if !api_key.is_empty() {
+        req = req.header("authorization", format!("Bearer {api_key}"));
+    }
+    let resp = req
         .json(&body)
         .send()
         .await
@@ -846,6 +847,8 @@ pub async fn ai_chat(
     kind: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
+    // false for local runtimes (e.g. Ollama) that need no API key
+    requires_key: Option<bool>,
     context: AiContext,
     messages: Vec<Value>,
 ) -> Result<TurnResult, String> {
@@ -855,8 +858,14 @@ pub async fn ai_chat(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| default_model(&kind).to_string());
 
-    let api_key = key_get(&provider_id)
-        .ok_or("No API key set for this provider. Add one in the AI settings on the connect screen.")?;
+    let api_key = match key_get(&provider_id) {
+        Some(k) => k,
+        // keyless providers send no Authorization header at all
+        None if requires_key == Some(false) => String::new(),
+        None => {
+            return Err("No API key set for this provider. Add one in the AI settings on the connect screen.".to_string())
+        }
+    };
 
     let system = build_system(&context);
     let tools = tool_defs();
