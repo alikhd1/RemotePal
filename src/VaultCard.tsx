@@ -89,7 +89,7 @@ function VaultCard({ onImported }: Props) {
       </div>
       <div className="saved-empty">
         Encrypted archive of connections, S3 storages, snippets, keys, and
-        stored secrets — compatible with the PyQt app's backups.
+        stored secrets — restore it on any of your machines.
       </div>
       {notice && <div className="connect-notice">{notice}</div>}
       {error && <div className="connect-error">{error}</div>}

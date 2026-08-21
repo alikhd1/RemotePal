@@ -1,19 +1,14 @@
 # RemotePal
 
-A tabbed SSH client for Windows with built-in SFTP and S3 browsers, port
-forwarding, jump hosts, snippets, and encrypted vault backups. Built with
-[Tauri 2](https://tauri.app), React, and [xterm.js](https://xtermjs.org);
-the SSH layer is Rust ([russh](https://crates.io/crates/russh)) streaming
-PTY bytes to the frontend over Tauri events.
+An open source alternative to Termius — a portable, cross-platform
+(Windows / macOS / Linux) SSH key & server manager with a built-in terminal,
+SFTP and S3 file browsers, and encrypted sync between your machines. Built
+with [Tauri 2](https://tauri.app), React, and [xterm.js](https://xtermjs.org)
+on a Rust ([russh](https://crates.io/crates/russh)) SSH backend. Local-first:
+your data never touches anyone's cloud but your own.
 
 [![CI](https://github.com/alikhd1/RemotePal/actions/workflows/ci.yml/badge.svg)](https://github.com/alikhd1/RemotePal/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-RemotePal is the Tauri rewrite of
-[RemotePal-python](https://github.com/alikhd1/RemotePal-python) (PyQt6), with
-full feature parity. Both apps share the same `~/.remotepal` config format —
-saved connections, known hosts, snippets, and encrypted vault backups made in
-one app work in the other.
 
 <!-- TODO: add a screenshot, e.g. ![RemotePal](docs/screenshot.png) -->
 
@@ -23,8 +18,8 @@ one app work in the other.
   channel; multiple concurrent sessions, live PTY resize, disconnect
   indicators, and hidden sessions stay connected
 - **Saved connections** — metadata in `~/.remotepal/connections.json`,
-  passwords in the Windows Credential Manager (never on disk); one-click
-  connect, edit/delete
+  passwords in the OS credential store (never on disk); one-click connect,
+  edit/delete
 - **Host key verification** — trust-on-first-use against
   `~/.remotepal/known_hosts` with SHA256 fingerprints, and a loud warning
   when a host's key changes
@@ -33,7 +28,7 @@ one app work in the other.
   delete, multi-select, and OS drag-and-drop upload
 - **Edit-on-save** — open a remote file in your local editor; saves re-upload
   automatically (debounced file watcher)
-- **S3 browser** — storages (secret keys in the Credential Manager) open as
+- **S3 browser** — storages (secret keys in the credential store) open as
   tabs with prefix navigation, upload/download with progress, rename, and
   recursive prefix delete; works with AWS or any custom endpoint (MinIO,
   moto) via path-style addressing
@@ -43,14 +38,14 @@ one app work in the other.
   connections (nested, cycle-safe), with per-hop host key verification
 - **Folder sync** — push missing/changed files to the remote, with optional
   mirror deletes
-- **Snippets** — `snippets.json` shared with the PyQt app; `{host}` `{user}`
-  `{port}` `{name}` fill in automatically, other `{placeholders}` prompt on
-  send, multi-line commands run line by line
+- **Snippets** — per-session snippets panel; `{host}` `{user}` `{port}`
+  `{name}` fill in automatically, other `{placeholders}` prompt on send,
+  multi-line commands run line by line
 - **Themes** — One Dark, Light, Solarized Dark, Nord; applied live to the
   app and all open terminals, persisted across restarts
-- **Encrypted vault backups** — byte-compatible with the PyQt app (RPAL1:
-  PBKDF2-SHA256/600k + Fernet over tar.gz); export/import connections, S3
-  storages, snippets, bundled keys, and stored secrets
+- **Encrypted vault backups** — PBKDF2-SHA256 (600k iterations) + Fernet
+  over tar.gz; export/import connections, S3 storages, snippets, bundled
+  keys, and stored secrets to move your whole setup between machines
 
 ## Install
 
@@ -58,13 +53,13 @@ Installers are published on the
 [Releases](https://github.com/alikhd1/RemotePal/releases) page, built by CI
 from version tags. Until a release is out, build from source (below).
 
-Windows is the primary platform right now (WebView2, Credential Manager);
-the stack is portable, but other platforms are untested.
+Windows builds are the most tested today; macOS and Linux build from the
+same codebase.
 
 ## Building from source
 
 Prereqs: Node 20+, Rust (MSVC toolchain on Windows), and the WebView2
-runtime.
+runtime on Windows.
 
 ```sh
 npm install
