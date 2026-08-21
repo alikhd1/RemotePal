@@ -10,6 +10,7 @@ import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
 import AiPanel from "./AiPanel";
 import ServerInfoBar from "./ServerInfoBar";
+import ComposeBar from "./ComposeBar";
 import SnippetsPanel, {
   type LiveSession,
   type SessionMeta,
@@ -304,6 +305,7 @@ function TerminalPane({
           <AiPanel sessionId={id} meta={meta} allSessions={allSessions} />
         )}
       </div>
+      <ComposeBar sessionId={id} disabled={disconnected} />
     </div>
   );
 }
