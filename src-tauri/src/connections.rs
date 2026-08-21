@@ -48,6 +48,9 @@ pub struct SavedConnection {
     /// let the remote host use the local SSH agent's keys
     #[serde(default)]
     pub agent_forward: bool,
+    /// OS slug for the list icon, auto-detected on connect ("" = unknown)
+    #[serde(default)]
+    pub os: String,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -322,6 +325,7 @@ mod tests {
             forwards: Vec::new(),
             group: String::new(),
             agent_forward: false,
+            os: String::new(),
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();

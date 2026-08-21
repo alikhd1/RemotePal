@@ -3,11 +3,14 @@ import type { ITheme } from "@xterm/xterm";
 interface AppTheme {
   bg: string;
   panel: string;
+  /** raised surface: host cards, sidebar chips */
+  card: string;
   border: string;
   fg: string;
   fgDim: string;
   accent: string;
   danger: string;
+  ok: string;
 }
 
 export interface Theme {
@@ -20,11 +23,13 @@ export const THEMES: Record<string, Theme> = {
     app: {
       bg: "#1e1e1e",
       panel: "#252526",
+      card: "#2b2b2d",
       border: "#3c3c3c",
       fg: "#d4d4d4",
       fgDim: "#9da0a6",
       accent: "#61afef",
       danger: "#e06c75",
+      ok: "#98c379",
     },
     term: {
       background: "#1e1e1e",
@@ -50,13 +55,15 @@ export const THEMES: Record<string, Theme> = {
   },
   Light: {
     app: {
-      bg: "#fafafa",
-      panel: "#f0f0f0",
-      border: "#d0d0d0",
+      bg: "#f2f3f5",
+      panel: "#e9eaee",
+      card: "#ffffff",
+      border: "#d5d7dd",
       fg: "#383a42",
       fgDim: "#696c77",
       accent: "#4078f2",
       danger: "#e45649",
+      ok: "#50a14f",
     },
     term: {
       background: "#fafafa",
@@ -84,11 +91,13 @@ export const THEMES: Record<string, Theme> = {
     app: {
       bg: "#002b36",
       panel: "#073642",
+      card: "#0a4050",
       border: "#0e4956",
       fg: "#839496",
       fgDim: "#586e75",
       accent: "#268bd2",
       danger: "#dc322f",
+      ok: "#859900",
     },
     term: {
       background: "#002b36",
@@ -116,11 +125,13 @@ export const THEMES: Record<string, Theme> = {
     app: {
       bg: "#2e3440",
       panel: "#3b4252",
+      card: "#434c5e",
       border: "#4c566a",
       fg: "#d8dee9",
       fgDim: "#8f9aae",
       accent: "#81a1c1",
       danger: "#bf616a",
+      ok: "#a3be8c",
     },
     term: {
       background: "#2e3440",
@@ -171,11 +182,13 @@ export function applyTheme(name: string) {
   const root = document.documentElement.style;
   root.setProperty("--bg", app.bg);
   root.setProperty("--panel", app.panel);
+  root.setProperty("--card", app.card);
   root.setProperty("--border", app.border);
   root.setProperty("--fg", app.fg);
   root.setProperty("--fg-dim", app.fgDim);
   root.setProperty("--accent", app.accent);
   root.setProperty("--danger", app.danger);
+  root.setProperty("--ok", app.ok);
   listeners.forEach((listener) => listener());
 }
 

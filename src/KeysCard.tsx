@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { X } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 export interface VaultKey {
@@ -169,7 +170,7 @@ function KeysCard() {
                   remove(key);
                 }}
               >
-                {confirmDeleteName === key.name ? "sure?" : "×"}
+                {confirmDeleteName === key.name ? "sure?" : <X size={13} />}
               </button>
             </span>
           </li>

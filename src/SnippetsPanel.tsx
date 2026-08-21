@@ -12,6 +12,8 @@ export interface SessionMeta {
   user: string;
   port: number;
   name: string;
+  /** OS slug for the tab icon (see osIcons.tsx) */
+  os?: string;
 }
 
 export interface LiveSession {

@@ -480,6 +480,7 @@ pub fn import_backup(path: &str, password: &str) -> Result<ImportSummary, String
                 forwards: Vec::new(),
                 group: server.group,
                 agent_forward: server.agent_forward,
+                os: String::new(),
             });
             summary.connections += 1;
         }
@@ -580,6 +581,7 @@ mod tests {
                 forwards: Vec::new(),
                 group: String::new(),
                 agent_forward: false,
+                os: String::new(),
             },
             SavedConnection {
                 id: "id-b".into(),
@@ -593,6 +595,7 @@ mod tests {
                 forwards: Vec::new(),
                 group: String::new(),
                 agent_forward: false,
+                os: String::new(),
             },
         ];
         connections::save_all(&conns).unwrap();

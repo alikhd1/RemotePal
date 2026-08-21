@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Cloud, Plus, SquareTerminal, X } from "lucide-react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
 import SplitLayout from "./SplitLayout";
+import OsIcon from "./osIcons";
 import {
   findPane,
   leaves,
@@ -210,39 +212,51 @@ function App() {
   return (
     <div className="app">
       <div className="tab-bar">
-        {tabs.map((t) => (
-          <div
-            key={t.key}
-            className={
-              "tab" +
-              (active === t.key ? " active" : "") +
-              (t.kind === "ssh" && leaves(t.root).some((p) => p.disconnected)
-                ? " disconnected"
-                : "")
-            }
-            onClick={() => setActive(t.key)}
-          >
-            <span className="tab-title">
-              {t.kind === "s3" ? `S3 · ${t.title}` : t.title}
-            </span>
-            <button
-              className="tab-close"
-              title="Close"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(t.key);
-              }}
+        <button
+          className={"tab-home" + (active === null ? " active" : "")}
+          title="Hosts & vault"
+          onClick={() => setActive(null)}
+        >
+          <SquareTerminal size={15} />
+          <span>Hosts</span>
+        </button>
+        {tabs.map((t) => {
+          const dead =
+            t.kind === "ssh" && leaves(t.root).some((p) => p.disconnected);
+          return (
+            <div
+              key={t.key}
+              className={"tab" + (active === t.key ? " active" : "")}
+              onClick={() => setActive(t.key)}
             >
-              ×
-            </button>
-          </div>
-        ))}
+              {t.kind === "ssh" ? (
+                <OsIcon os={leaves(t.root)[0]?.meta.os} size={16} />
+              ) : (
+                <Cloud size={13} className="tab-kind-icon" />
+              )}
+              <span className="tab-title">{t.title}</span>
+              {t.kind === "ssh" && (
+                <span className={"tab-dot" + (dead ? " dead" : "")} />
+              )}
+              <button
+                className="tab-close"
+                title="Close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(t.key);
+                }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          );
+        })}
         <button
           className={"tab-new" + (active === null ? " active" : "")}
           title="New session"
           onClick={() => setActive(null)}
         >
-          +
+          <Plus size={15} />
         </button>
         <div className="tab-bar-right">
           {activeTab?.kind === "ssh" && activePaneId && (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Pencil, X } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 export interface S3Storage {
@@ -147,7 +148,7 @@ function S3Storages({ onOpen }: Props) {
                   edit(s);
                 }}
               >
-                ✎
+                <Pencil size={12} />
               </button>
               <button
                 type="button"
@@ -161,7 +162,7 @@ function S3Storages({ onOpen }: Props) {
                   remove(s);
                 }}
               >
-                {confirmDeleteId === s.id ? "sure?" : "×"}
+                {confirmDeleteId === s.id ? "sure?" : <X size={13} />}
               </button>
             </span>
           </li>

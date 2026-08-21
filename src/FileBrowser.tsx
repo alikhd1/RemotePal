@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { FileText, Folder } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 interface SftpEntry {
@@ -544,7 +545,13 @@ function FileBrowser({ sessionId, active }: Props) {
               if (entry.isDir && path) load(joinPath(path, entry.name));
             }}
           >
-            <span className="files-icon">{entry.isDir ? "📁" : "📄"}</span>
+            <span className="files-icon">
+              {entry.isDir ? (
+                <Folder size={14} className="icon-folder" />
+              ) : (
+                <FileText size={14} className="icon-file" />
+              )}
+            </span>
             <span className="files-name" title={entry.name}>
               {entry.name}
             </span>

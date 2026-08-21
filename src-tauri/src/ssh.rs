@@ -341,13 +341,17 @@ pub async fn connect_chain(specs: &[ConnectSpec]) -> Result<Vec<Arc<SshHandle>>,
     Ok(chain)
 }
 
-/// Run one command on a session, returning (exit status, stderr).
-pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String), String> {
+/// Run one command on a session, returning (exit status, stdout, stderr).
+pub async fn exec_capture(
+    handle: &SshHandle,
+    command: &str,
+) -> Result<(u32, String, String), String> {
     let mut channel = handle
         .channel_open_session()
         .await
         .map_err(|e| e.to_string())?;
     channel.exec(true, command).await.map_err(|e| e.to_string())?;
+    let mut stdout = String::new();
     let mut stderr = String::new();
     let mut status: Option<u32> = None;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
@@ -356,6 +360,9 @@ pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String),
             .await
             .map_err(|_| "remote command timed out".to_string())?;
         match msg {
+            Some(ChannelMsg::Data { ref data }) => {
+                stdout.push_str(&String::from_utf8_lossy(&data[..]));
+            }
             Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                 stderr.push_str(&String::from_utf8_lossy(&data[..]));
             }
@@ -365,7 +372,106 @@ pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String),
             _ => {}
         }
     }
-    Ok((status.unwrap_or(255), stderr.trim().to_string()))
+    Ok((
+        status.unwrap_or(255),
+        stdout.trim().to_string(),
+        stderr.trim().to_string(),
+    ))
+}
+
+/// Run one command on a session, returning (exit status, stderr).
+pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String), String> {
+    let (status, _stdout, stderr) = exec_capture(handle, command).await?;
+    Ok((status, stderr))
+}
+
+/// Slugs the frontend has icons for; anything else degrades to "linux".
+const KNOWN_OS_IDS: &[&str] = &[
+    "ubuntu", "debian", "fedora", "centos", "arch", "alpine", "kali", "gentoo", "nixos",
+];
+
+fn normalize_os_id(id: &str) -> Option<String> {
+    let slug = match id {
+        _ if KNOWN_OS_IDS.contains(&id) => id,
+        "rhel" | "redhat" => "redhat",
+        "rocky" | "rockylinux" => "rocky",
+        "almalinux" | "alma" => "alma",
+        "opensuse" | "suse" | "sles" => "opensuse",
+        _ if id.starts_with("opensuse") => "opensuse",
+        "amzn" | "amazon" => "amazon",
+        "ol" | "oracle" => "oracle",
+        "raspbian" => "raspbian",
+        "linuxmint" | "mint" => "mint",
+        "pop" => "ubuntu",
+        _ => return None,
+    };
+    Some(slug.to_string())
+}
+
+/// Turn `uname -s` + `/etc/os-release` output into an OS slug.
+pub(crate) fn parse_os_slug(out: &str) -> Option<String> {
+    let lower = out.to_lowercase();
+    let value_of = |key: &str| {
+        lower.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix(key)
+                .map(|v| v.trim_matches('"').trim().to_string())
+        })
+    };
+    if let Some(id) = value_of("id=") {
+        if let Some(slug) = normalize_os_id(&id) {
+            return Some(slug);
+        }
+    }
+    // e.g. Pop!_OS: ID=pop ID_LIKE="ubuntu debian"
+    if let Some(like) = value_of("id_like=") {
+        if let Some(slug) = like.split_whitespace().find_map(normalize_os_id) {
+            return Some(slug);
+        }
+    }
+    for (needle, slug) in [
+        ("darwin", "macos"),
+        ("freebsd", "freebsd"),
+        ("openbsd", "openbsd"),
+        ("netbsd", "netbsd"),
+        ("linux", "linux"),
+    ] {
+        if lower.contains(needle) {
+            return Some(slug.to_string());
+        }
+    }
+    None
+}
+
+/// Best-effort OS detection for the host-list icon. POSIX systems
+/// answer the first probe; the `ver` fallback catches Windows hosts
+/// whose default shell (cmd/powershell) chokes on the POSIX one.
+#[tauri::command]
+pub async fn ssh_detect_os(state: State<'_, SshSessions>, id: u32) -> Result<String, String> {
+    let handle = state
+        .maps
+        .handles
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or("no such session")?;
+    if let Ok((_, out, _)) = exec_capture(
+        &handle,
+        "uname -s 2>/dev/null; cat /etc/os-release 2>/dev/null",
+    )
+    .await
+    {
+        if let Some(slug) = parse_os_slug(&out) {
+            return Ok(slug);
+        }
+    }
+    if let Ok((0, out, _)) = exec_capture(&handle, "cmd /c ver").await {
+        if out.to_lowercase().contains("windows") {
+            return Ok("windows".into());
+        }
+    }
+    Ok(String::new())
 }
 
 /// Connect the whole chain and open an interactive shell on the final
@@ -563,6 +669,24 @@ mod tests {
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ67aMfdava0ARCxRfHgX0i7CuJSVXC6Fttj8I2fg+xA";
     const KEY_B: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAImG70JQNvehB5oxvEa76XsLgphdNRQNBNDTLp9ZLS";
+
+    #[test]
+    fn os_slug_parsing() {
+        let ubuntu = "Linux\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nNAME=\"Ubuntu\"\nID=ubuntu\nID_LIKE=debian";
+        assert_eq!(parse_os_slug(ubuntu).as_deref(), Some("ubuntu"));
+        // Pop!_OS falls back to ID_LIKE
+        let pop = "Linux\nNAME=\"Pop!_OS\"\nID=pop\nID_LIKE=\"ubuntu debian\"";
+        assert_eq!(parse_os_slug(pop).as_deref(), Some("ubuntu"));
+        let rhel = "Linux\nNAME=\"Red Hat Enterprise Linux\"\nID=\"rhel\"\nID_LIKE=\"fedora\"";
+        assert_eq!(parse_os_slug(rhel).as_deref(), Some("redhat"));
+        let leap = "Linux\nID=\"opensuse-leap\"\nID_LIKE=\"suse opensuse\"";
+        assert_eq!(parse_os_slug(leap).as_deref(), Some("opensuse"));
+        assert_eq!(parse_os_slug("Darwin").as_deref(), Some("macos"));
+        assert_eq!(parse_os_slug("FreeBSD").as_deref(), Some("freebsd"));
+        // unknown distro without os-release still counts as linux
+        assert_eq!(parse_os_slug("Linux").as_deref(), Some("linux"));
+        assert_eq!(parse_os_slug("'uname' is not recognized"), None);
+    }
 
     #[test]
     fn changed_key_is_flagged_and_trust_replaces_it() {

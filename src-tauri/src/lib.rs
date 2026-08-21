@@ -25,6 +25,7 @@ pub fn run() {
             ssh::ssh_disconnect,
             ssh::ssh_reconnect,
             ssh::ssh_duplicate,
+            ssh::ssh_detect_os,
             ssh::trust_host_key,
             connections::connections_list,
             connections::connection_save,

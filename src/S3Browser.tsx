@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { FileText, Folder } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 interface S3Object {
@@ -618,7 +619,13 @@ function S3Browser({ storageId, active }: Props) {
               else if (row.isFolder) load(row.id);
             }}
           >
-            <span className="files-icon">{row.isFolder ? "📁" : "📄"}</span>
+            <span className="files-icon">
+              {row.isFolder ? (
+                <Folder size={14} className="icon-folder" />
+              ) : (
+                <FileText size={14} className="icon-file" />
+              )}
+            </span>
             <span className="files-name" title={row.name}>
               {row.name}
             </span>
