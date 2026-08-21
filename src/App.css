@@ -253,6 +253,91 @@ body,
   cursor: pointer;
 }
 
+/* --------------------------------------------------- host key dialog */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 10;
+}
+
+.hostkey-dialog {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.hostkey-dialog.danger {
+  border-color: var(--danger);
+}
+
+.hostkey-dialog h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.hostkey-dialog.danger h3 {
+  color: var(--danger);
+}
+
+.hostkey-dialog p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.fingerprint {
+  padding: 8px 10px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  word-break: break-all;
+  user-select: text;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dialog-buttons button {
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dialog-buttons .accent-btn {
+  color: #1e1e1e;
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dialog-buttons .danger-btn {
+  color: #1e1e1e;
+  font-weight: 600;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
 .connect-error {
   padding: 8px 10px;
   font-size: 13px;

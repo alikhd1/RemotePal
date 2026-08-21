@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-use crate::ssh::{self, SshSessions};
+use crate::ssh::{self, ConnectError, SshSessions};
 
 const KEYRING_SERVICE: &str = "RemotePal";
 
@@ -34,7 +34,7 @@ pub struct SavedConnection {
 #[derive(Default)]
 pub struct StoreLock(pub Mutex<()>);
 
-fn vault_dir() -> Result<PathBuf, String> {
+pub(crate) fn vault_dir() -> Result<PathBuf, String> {
     if let Ok(dir) = std::env::var("REMOTEPAL_VAULT_DIR") {
         return Ok(PathBuf::from(dir));
     }
@@ -123,19 +123,19 @@ pub async fn ssh_connect_saved(
     sessions: State<'_, SshSessions>,
     lock: State<'_, StoreLock>,
     id: String,
-) -> Result<u32, String> {
+) -> Result<u32, ConnectError> {
     let conn = {
         let _guard = lock.0.lock().unwrap();
         load_all()?
             .into_iter()
             .find(|c| c.id == id)
-            .ok_or("saved connection not found")?
+            .ok_or_else(|| ConnectError::other("saved connection not found"))?
     };
     let password = if conn.has_password {
         Some(
             keyring::Entry::new(KEYRING_SERVICE, &conn.id)
                 .and_then(|e| e.get_password())
-                .map_err(|e| format!("cannot read stored password: {e}"))?,
+                .map_err(|e| ConnectError::other(format!("cannot read stored password: {e}")))?,
         )
     } else {
         None
@@ -153,12 +153,21 @@ pub async fn ssh_connect_saved(
     .await
 }
 
+/// Tests that set REMOTEPAL_VAULT_DIR must hold this so parallel test
+/// threads don't race on the process-wide env var.
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> &'static Mutex<()> {
+    static LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn store_roundtrip() {
+        let _guard = test_env_lock().lock().unwrap();
         let dir = std::env::temp_dir().join(format!(
             "remotepal-test-{}",
             uuid::Uuid::new_v4()

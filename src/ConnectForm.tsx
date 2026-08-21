@@ -11,6 +11,33 @@ export interface SavedConnection {
   hasPassword: boolean;
 }
 
+export interface HostKeyIssue {
+  kind: "hostKeyUnknown" | "hostKeyChanged";
+  host: string;
+  port: number;
+  fingerprint: string;
+  keyOpenssh: string;
+}
+
+function asHostKeyIssue(err: unknown): HostKeyIssue | null {
+  if (
+    err &&
+    typeof err === "object" &&
+    "kind" in err &&
+    (err.kind === "hostKeyUnknown" || err.kind === "hostKeyChanged")
+  ) {
+    return err as HostKeyIssue;
+  }
+  return null;
+}
+
+function errMessage(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}
+
 interface Props {
   onConnected: (id: number, title: string) => void;
 }
@@ -21,6 +48,10 @@ function ConnectForm({ onConnected }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hostKeyPrompt, setHostKeyPrompt] = useState<{
+    issue: HostKeyIssue;
+    retry: () => void;
+  } | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -52,10 +83,32 @@ function ConnectForm({ onConnected }: Props) {
       const id = await invoke<number>("ssh_connect_saved", { id: c.id });
       onConnected(id, c.name || `${c.user}@${c.host}`);
     } catch (err) {
-      setError(`${c.name}: ${err}`);
+      const issue = asHostKeyIssue(err);
+      if (issue) {
+        setHostKeyPrompt({ issue, retry: () => connectSaved(c) });
+      } else {
+        setError(`${c.name}: ${errMessage(err)}`);
+      }
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function trustAndRetry() {
+    if (!hostKeyPrompt) return;
+    const { issue, retry } = hostKeyPrompt;
+    setHostKeyPrompt(null);
+    try {
+      await invoke("trust_host_key", {
+        host: issue.host,
+        port: issue.port,
+        keyOpenssh: issue.keyOpenssh,
+      });
+    } catch (err) {
+      setError(errMessage(err));
+      return;
+    }
+    retry();
   }
 
   async function deleteSaved(c: SavedConnection) {
@@ -99,6 +152,10 @@ function ConnectForm({ onConnected }: Props) {
 
   async function connect(e: React.FormEvent) {
     e.preventDefault();
+    doConnect();
+  }
+
+  async function doConnect() {
     setConnecting(true);
     setError(null);
     try {
@@ -129,7 +186,12 @@ function ConnectForm({ onConnected }: Props) {
       });
       onConnected(id, title);
     } catch (err) {
-      setError(String(err));
+      const issue = asHostKeyIssue(err);
+      if (issue) {
+        setHostKeyPrompt({ issue, retry: () => doConnect() });
+      } else {
+        setError(errMessage(err));
+      }
     } finally {
       setConnecting(false);
     }
@@ -286,6 +348,60 @@ function ConnectForm({ onConnected }: Props) {
           {error && <div className="connect-error">{error}</div>}
         </form>
       </div>
+
+      {hostKeyPrompt && (
+        <div className="modal-overlay">
+          <div
+            className={
+              "hostkey-dialog" +
+              (hostKeyPrompt.issue.kind === "hostKeyChanged" ? " danger" : "")
+            }
+          >
+            {hostKeyPrompt.issue.kind === "hostKeyChanged" ? (
+              <>
+                <h3>⚠ Host key changed!</h3>
+                <p>
+                  The identity of{" "}
+                  <strong>
+                    {hostKeyPrompt.issue.host}:{hostKeyPrompt.issue.port}
+                  </strong>{" "}
+                  has CHANGED since you last connected. Someone could be
+                  intercepting this connection, or the server was reinstalled.
+                  Only continue if you know why the key changed.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3>Unknown host</h3>
+                <p>
+                  First connection to{" "}
+                  <strong>
+                    {hostKeyPrompt.issue.host}:{hostKeyPrompt.issue.port}
+                  </strong>
+                  . Verify the fingerprint before trusting it.
+                </p>
+              </>
+            )}
+            <code className="fingerprint">{hostKeyPrompt.issue.fingerprint}</code>
+            <div className="dialog-buttons">
+              <button type="button" onClick={() => setHostKeyPrompt(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={
+                  hostKeyPrompt.issue.kind === "hostKeyChanged"
+                    ? "danger-btn"
+                    : "accent-btn"
+                }
+                onClick={trustAndRetry}
+              >
+                Trust &amp; connect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
