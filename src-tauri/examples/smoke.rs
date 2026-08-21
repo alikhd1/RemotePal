@@ -6,14 +6,18 @@
 //! key the retry must succeed, open a PTY shell, type "hello", and get
 //! the echo shell's "you typed: hello" back.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use remotepal_lib::forwards::start_forward;
 use remotepal_lib::ssh::{open_shell, trust_host_key_inner, ConnectError};
 use russh::ChannelMsg;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // start_forward spawns via tauri's async runtime; back it with ours
+    tauri::async_runtime::set(tokio::runtime::Handle::current());
     let mut args = std::env::args().skip(1);
     let usage = "usage: smoke <port> <password>";
     let port: u16 = args.next().expect(usage).parse().expect(usage);
@@ -44,6 +48,7 @@ async fn main() {
         open_shell("127.0.0.1", port, "demo", Some(password), None)
             .await
             .expect("connect after trust failed");
+    let session = Arc::new(session);
 
     channel.data(&b"hello\r"[..]).await.expect("write failed");
 
@@ -102,6 +107,27 @@ async fn main() {
     );
     sftp.remove_file(&test_path).await.expect("sftp remove");
     println!("SFTP OK: home={home}");
+
+    // Local port forward: tunnel back to the demo sshd itself and read
+    // its SSH banner through the tunnel.
+    let (fwd_port, _stop) = start_forward(
+        Arc::clone(&session),
+        0,
+        "127.0.0.1".to_string(),
+        port,
+    )
+    .await
+    .expect("start forward");
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", fwd_port))
+        .await
+        .expect("connect through forward");
+    let mut banner = [0u8; 7];
+    tokio::time::timeout(Duration::from_secs(5), tcp.read_exact(&mut banner))
+        .await
+        .expect("banner timeout")
+        .expect("banner read");
+    assert_eq!(&banner, b"SSH-2.0", "unexpected banner: {banner:?}");
+    println!("FORWARD OK: 127.0.0.1:{fwd_port}");
 
     let _ = session
         .disconnect(russh::Disconnect::ByApplication, "", "en")

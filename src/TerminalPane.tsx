@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import FileBrowser from "./FileBrowser";
+import ForwardsPanel from "./ForwardsPanel";
 import "@xterm/xterm/css/xterm.css";
 
 // One Dark, carried over from the PyQt app
@@ -40,11 +41,19 @@ interface Props {
   id: number;
   active: boolean;
   showFiles: boolean;
+  showForwards: boolean;
   onClose: () => void;
   onDisconnected: () => void;
 }
 
-function TerminalPane({ id, active, showFiles, onClose, onDisconnected }: Props) {
+function TerminalPane({
+  id,
+  active,
+  showFiles,
+  showForwards,
+  onClose,
+  onDisconnected,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -132,6 +141,7 @@ function TerminalPane({ id, active, showFiles, onClose, onDisconnected }: Props)
           <button onClick={onClose}>Close tab</button>
         </div>
       )}
+      {showForwards && <ForwardsPanel sessionId={id} />}
       <div className="term-row">
         <div ref={containerRef} className="term-container" />
         {showFiles && <FileBrowser sessionId={id} active={active} />}

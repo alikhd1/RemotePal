@@ -21,6 +21,7 @@ function App() {
   // active tab key; null shows the connect view ("+" tab)
   const [active, setActive] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
+  const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
 
@@ -61,8 +62,11 @@ function App() {
     );
   }
 
-  function toggleFiles(key: string) {
-    setFilesOpen((prev) => {
+  function toggleIn(
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    key: string,
+  ) {
+    setter((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -106,15 +110,28 @@ function App() {
           +
         </button>
         {activeTab?.kind === "ssh" && (
-          <button
-            className={
-              "files-toggle" + (filesOpen.has(activeTab.key) ? " active" : "")
-            }
-            title="Toggle file browser"
-            onClick={() => toggleFiles(activeTab.key)}
-          >
-            Files
-          </button>
+          <>
+            <button
+              className={
+                "files-toggle" +
+                (forwardsOpen.has(activeTab.key) ? " active" : "")
+              }
+              title="Toggle port forwards"
+              onClick={() => toggleIn(setForwardsOpen, activeTab.key)}
+            >
+              Forwards
+            </button>
+            <button
+              className={
+                "files-toggle no-auto-margin" +
+                (filesOpen.has(activeTab.key) ? " active" : "")
+              }
+              title="Toggle file browser"
+              onClick={() => toggleIn(setFilesOpen, activeTab.key)}
+            >
+              Files
+            </button>
+          </>
         )}
       </div>
       <div className="panes">
@@ -129,6 +146,7 @@ function App() {
                 id={t.sshId}
                 active={active === t.key}
                 showFiles={filesOpen.has(t.key)}
+                showForwards={forwardsOpen.has(t.key)}
                 onClose={() => closeTab(t.key)}
                 onDisconnected={() => markDisconnected(t.key)}
               />

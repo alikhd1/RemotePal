@@ -459,6 +459,10 @@ body,
   background: var(--bg);
 }
 
+.files-toggle.no-auto-margin {
+  margin-left: 4px;
+}
+
 .files-toggle {
   align-self: center;
   margin-left: auto;
@@ -494,6 +498,106 @@ body,
   flex: 1;
   min-height: 0;
   display: flex;
+}
+
+/* ---------------------------------------------------- port forwards */
+
+.forwards-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.forwards-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+}
+
+.forwards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.forwards-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.forwards-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.forwards-desc {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.forwards-row button {
+  padding: 0 6px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.forwards-row button:hover {
+  color: var(--danger);
+}
+
+.forwards-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.forwards-form input {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.forwards-form input:focus {
+  border-color: var(--accent);
+}
+
+.forwards-form .fw-port {
+  width: 90px;
+}
+
+.forwards-form .fw-host {
+  flex: 1;
+  min-width: 0;
+}
+
+.forwards-form button {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #1e1e1e;
+  font-weight: 600;
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
 }
 
 /* ---------------------------------------------------- file browser */
