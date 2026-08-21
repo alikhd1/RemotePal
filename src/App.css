@@ -453,6 +453,28 @@ body,
   background: var(--bg);
 }
 
+.files-toggle {
+  align-self: center;
+  margin-left: auto;
+  padding: 3px 12px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.files-toggle:hover {
+  color: var(--fg);
+}
+
+.files-toggle.active {
+  color: var(--fg);
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
 /* -------------------------------------------------------- terminal */
 
 .term-pane {
@@ -460,6 +482,229 @@ body,
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.term-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ---------------------------------------------------- file browser */
+
+.files-panel {
+  width: 400px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.files-pathbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-pathbar button {
+  padding: 4px 8px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.files-pathbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.files-pathform {
+  flex: 1;
+  min-width: 0;
+}
+
+.files-pathform input {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.files-pathform input:focus {
+  border-color: var(--accent);
+}
+
+.files-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-toolbar button {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.files-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.files-delete.confirming {
+  color: #1e1e1e;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.files-inputrow {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-inputrow input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+}
+
+.files-inputrow button {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #1e1e1e;
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.files-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: default;
+  user-select: none;
+}
+
+.files-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.files-row.selected {
+  background: rgba(97, 175, 239, 0.18);
+}
+
+.files-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.files-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.files-size {
+  flex-shrink: 0;
+  width: 62px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.files-mtime {
+  flex-shrink: 0;
+  width: 108px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.files-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--fg-dim);
+}
+
+.files-transfer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.files-transfer-label {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.files-progress {
+  flex: 1;
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.files-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+
+.files-transfer-pct {
+  width: 36px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.files-error {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--danger);
+  background: rgba(224, 108, 117, 0.1);
+  border-top: 1px solid rgba(224, 108, 117, 0.4);
+  word-break: break-word;
 }
 
 .term-banner {

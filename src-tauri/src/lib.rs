@@ -1,10 +1,12 @@
 pub mod connections;
+pub mod sftp;
 pub mod ssh;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(ssh::SshSessions::default())
         .manage(connections::StoreLock::default())
         .invoke_handler(tauri::generate_handler![
@@ -17,6 +19,13 @@ pub fn run() {
             connections::connection_save,
             connections::connection_delete,
             connections::ssh_connect_saved,
+            sftp::sftp_home,
+            sftp::sftp_list,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_delete,
+            sftp::sftp_download,
+            sftp::sftp_upload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

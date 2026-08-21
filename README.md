@@ -18,8 +18,11 @@ Early. Working so far:
   PyQt app): trust-on-first-use dialog with the SHA256 fingerprint, and a
   loud warning when a host's key changes; trusting a changed key replaces
   the stale entry
+- SFTP browser: per-session "Files" panel beside the terminal (reuses the
+  SSH connection, no re-auth) with navigation, upload/download with
+  progress, new dir, rename, and delete
 
-Not yet ported from the PyQt app: vault encryption/backup, SFTP/S3 browsers, folder sync, port forwards, jump hosts, themes.
+Not yet ported from the PyQt app: vault encryption/backup, edit-on-save auto-upload, S3 browser, folder sync, port forwards, jump hosts, themes.
 
 ## Development
 

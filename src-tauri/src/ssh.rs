@@ -62,10 +62,20 @@ pub enum TermCmd {
     Close,
 }
 
+/// Everything keyed by session id. The pump task owns a clone of the
+/// Arc so it can clean up after itself; SFTP sessions are opened lazily
+/// on the stored SSH handle.
+#[derive(Default)]
+pub struct SessionMaps {
+    pub senders: Mutex<HashMap<u32, mpsc::UnboundedSender<TermCmd>>>,
+    pub handles: Mutex<HashMap<u32, Arc<client::Handle<KnownHostsHandler>>>>,
+    pub sftp: Mutex<HashMap<u32, Arc<russh_sftp::client::SftpSession>>>,
+}
+
 #[derive(Default)]
 pub struct SshSessions {
     counter: AtomicU32,
-    senders: Arc<Mutex<HashMap<u32, mpsc::UnboundedSender<TermCmd>>>>,
+    pub maps: Arc<SessionMaps>,
 }
 
 fn known_hosts_file() -> Result<PathBuf, String> {
@@ -260,11 +270,18 @@ pub async fn start_session(
     key_path: Option<String>,
 ) -> Result<u32, ConnectError> {
     let (session, mut channel) = open_shell(host, port, user, password, key_path).await?;
+    let session = Arc::new(session);
 
     let id = sessions.counter.fetch_add(1, Ordering::Relaxed) + 1;
     let (tx, mut rx) = mpsc::unbounded_channel::<TermCmd>();
-    sessions.senders.lock().unwrap().insert(id, tx);
-    let senders = Arc::clone(&sessions.senders);
+    sessions.maps.senders.lock().unwrap().insert(id, tx);
+    sessions
+        .maps
+        .handles
+        .lock()
+        .unwrap()
+        .insert(id, Arc::clone(&session));
+    let maps = Arc::clone(&sessions.maps);
 
     tauri::async_runtime::spawn(async move {
         loop {
@@ -295,7 +312,9 @@ pub async fn start_session(
         let _ = session
             .disconnect(Disconnect::ByApplication, "", "en")
             .await;
-        senders.lock().unwrap().remove(&id);
+        maps.senders.lock().unwrap().remove(&id);
+        maps.handles.lock().unwrap().remove(&id);
+        maps.sftp.lock().unwrap().remove(&id);
         let _ = app.emit(&format!("ssh-closed-{id}"), ());
     });
 
@@ -316,7 +335,7 @@ pub async fn ssh_connect(
 }
 
 fn send_cmd(state: &State<'_, SshSessions>, id: u32, cmd: TermCmd) -> Result<(), String> {
-    let senders = state.senders.lock().unwrap();
+    let senders = state.maps.senders.lock().unwrap();
     let tx = senders.get(&id).ok_or("no such session")?;
     tx.send(cmd).map_err(|_| "session closed".to_string())
 }

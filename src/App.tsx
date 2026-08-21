@@ -13,6 +13,16 @@ function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   // active session id; null shows the connect view ("+" tab)
   const [active, setActive] = useState<number | null>(null);
+  const [filesOpen, setFilesOpen] = useState<Set<number>>(new Set());
+
+  function toggleFiles(id: number) {
+    setFilesOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function addSession(id: number, title: string) {
     setSessions((prev) => [...prev, { id, title, disconnected: false }]);
@@ -67,6 +77,17 @@ function App() {
         >
           +
         </button>
+        {active !== null && (
+          <button
+            className={
+              "files-toggle" + (filesOpen.has(active) ? " active" : "")
+            }
+            title="Toggle file browser"
+            onClick={() => toggleFiles(active)}
+          >
+            Files
+          </button>
+        )}
       </div>
       <div className="panes">
         {sessions.map((s) => (
@@ -78,6 +99,7 @@ function App() {
             <TerminalPane
               id={s.id}
               active={active === s.id}
+              showFiles={filesOpen.has(s.id)}
               onClose={() => closeTab(s.id)}
               onDisconnected={() => markDisconnected(s.id)}
             />

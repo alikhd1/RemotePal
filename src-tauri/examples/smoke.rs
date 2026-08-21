@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use remotepal_lib::ssh::{open_shell, trust_host_key_inner, ConnectError};
 use russh::ChannelMsg;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -63,6 +64,44 @@ async fn main() {
             _ => {}
         }
     }
+
+    // SFTP round-trip on a second channel of the same connection —
+    // the same path the file browser uses.
+    let channel = session.channel_open_session().await.expect("sftp channel");
+    channel
+        .request_subsystem(true, "sftp")
+        .await
+        .expect("sftp subsystem");
+    let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+        .await
+        .expect("sftp session");
+    let home = sftp.canonicalize(".").await.expect("canonicalize");
+    let test_path = if home.ends_with('/') {
+        format!("{home}smoke-test.txt")
+    } else {
+        format!("{home}/smoke-test.txt")
+    };
+    let mut f = sftp.create(&test_path).await.expect("sftp create");
+    f.write_all(b"remotepal smoke").await.expect("sftp write");
+    f.flush().await.expect("sftp flush");
+    f.shutdown().await.expect("sftp close");
+    let mut f = sftp.open(&test_path).await.expect("sftp open");
+    let mut text = String::new();
+    f.read_to_string(&mut text).await.expect("sftp read");
+    f.shutdown().await.expect("sftp close read handle");
+    assert_eq!(text, "remotepal smoke", "sftp roundtrip content mismatch");
+    let names: Vec<String> = sftp
+        .read_dir(&home)
+        .await
+        .expect("sftp read_dir")
+        .map(|e| e.file_name())
+        .collect();
+    assert!(
+        names.contains(&"smoke-test.txt".to_string()),
+        "listing misses the test file: {names:?}"
+    );
+    sftp.remove_file(&test_path).await.expect("sftp remove");
+    println!("SFTP OK: home={home}");
 
     let _ = session
         .disconnect(russh::Disconnect::ByApplication, "", "en")
