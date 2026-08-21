@@ -502,6 +502,11 @@ body,
   font-size: 13px;
 }
 
+.files-panel.dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
 .files-pathbar {
   display: flex;
   align-items: center;

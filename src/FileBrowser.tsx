@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 interface SftpEntry {
   name: string;
@@ -58,9 +59,10 @@ let nextTransferId = 1;
 
 interface Props {
   sessionId: number;
+  active: boolean;
 }
 
-function FileBrowser({ sessionId }: Props) {
+function FileBrowser({ sessionId, active }: Props) {
   const [path, setPath] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<SftpEntry[]>([]);
@@ -72,8 +74,13 @@ function FileBrowser({ sessionId }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
   const transferIdRef = useRef<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
+  // the drag-drop subscription is created once; these mirror current state
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const pathRef = useRef<string | null>(null);
 
   function flashNotice(text: string) {
     setNotice(text);
@@ -99,6 +106,7 @@ function FileBrowser({ sessionId }: Props) {
       );
       setEntries(list);
       setPath(dir);
+      pathRef.current = dir;
       setPathInput(dir);
     } catch (err) {
       setError(String(err));
@@ -139,9 +147,21 @@ function FileBrowser({ sessionId }: Props) {
         },
       ),
     ];
+    const dragUnlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (!activeRef.current || !pathRef.current) return;
+      if (event.payload.type === "over" || event.payload.type === "enter") {
+        setDropping(true);
+      } else if (event.payload.type === "leave") {
+        setDropping(false);
+      } else if (event.payload.type === "drop") {
+        setDropping(false);
+        if (event.payload.paths.length) uploadPaths(event.payload.paths);
+      }
+    });
     return () => {
       cancelled = true;
       unlisteners.forEach((p) => p.then((un) => un()));
+      dragUnlisten.then((un) => un());
       window.clearTimeout(noticeTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,19 +196,30 @@ function FileBrowser({ sessionId }: Props) {
     setAnchor(name);
   }
 
+  async function uploadPaths(locals: string[]) {
+    const dir = pathRef.current;
+    if (!dir) return;
+    for (let i = 0; i < locals.length; i++) {
+      const local = locals[i];
+      const name = localBasename(local);
+      const label =
+        locals.length > 1 ? `↑ ${name} (${i + 1}/${locals.length})` : `↑ ${name}`;
+      await runTransfer(label, (tid) =>
+        invoke<number>("sftp_upload", {
+          id: sessionId,
+          localPath: local,
+          remotePath: joinPath(dir, name),
+          transferId: tid,
+        }),
+      );
+    }
+  }
+
   async function upload() {
     if (!path) return;
-    const local = await openDialog({ multiple: false, title: "Upload file" });
-    if (typeof local !== "string") return;
-    const name = localBasename(local);
-    await runTransfer(`↑ ${name}`, (tid) =>
-      invoke<number>("sftp_upload", {
-        id: sessionId,
-        localPath: local,
-        remotePath: joinPath(path, name),
-        transferId: tid,
-      }),
-    );
+    const local = await openDialog({ multiple: true, title: "Upload files" });
+    if (!local) return;
+    await uploadPaths(Array.isArray(local) ? local : [local]);
   }
 
   async function download() {
@@ -299,7 +330,7 @@ function FileBrowser({ sessionId }: Props) {
   }
 
   return (
-    <div className="files-panel">
+    <div className={"files-panel" + (dropping ? " dropping" : "")}>
       <div className="files-pathbar">
         <button
           type="button"

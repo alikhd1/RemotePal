@@ -134,7 +134,7 @@ function TerminalPane({ id, active, showFiles, onClose, onDisconnected }: Props)
       )}
       <div className="term-row">
         <div ref={containerRef} className="term-container" />
-        {showFiles && <FileBrowser sessionId={id} />}
+        {showFiles && <FileBrowser sessionId={id} active={active} />}
       </div>
     </div>
   );

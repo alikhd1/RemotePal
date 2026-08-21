@@ -336,14 +336,16 @@ pub async fn sftp_upload(
     transfer_id: String,
 ) -> Result<u64, String> {
     let sftp = sftp_for(&state, id).await?;
+    let meta = tokio::fs::metadata(&local_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    if meta.is_dir() {
+        return Err("directories cannot be uploaded (yet) — drop files instead".into());
+    }
     let mut local = tokio::fs::File::open(&local_path)
         .await
         .map_err(|e| e.to_string())?;
-    let total = local
-        .metadata()
-        .await
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let total = meta.len();
     let mut remote = sftp.create(&remote_path).await.map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; 32 * 1024];
     let mut done: u64 = 0;
