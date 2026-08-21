@@ -1969,6 +1969,54 @@ body,
   border-top: 1px solid var(--border);
 }
 
+/* the suggestion list floats above the input (composer sits at the
+   bottom of the pane, so there is no room below) */
+.compose-field {
+  position: relative;
+}
+
+.compose-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  z-index: 5;
+}
+
+.compose-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.compose-suggest-item.active {
+  background: var(--bg);
+}
+
+.compose-suggest-cmd {
+  flex: 1;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compose-suggest-src {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--fg-dim);
+}
+
 .compose-input {
   width: 100%;
   resize: vertical;
