@@ -29,6 +29,7 @@ interface Props {
   showForwards: boolean;
   showSnippets: boolean;
   meta: SessionMeta;
+  savedConnId?: string;
   allSessions: LiveSession[];
   onClose: () => void;
   onDisconnected: () => void;
@@ -42,6 +43,7 @@ function TerminalPane({
   showForwards,
   showSnippets,
   meta,
+  savedConnId,
   allSessions,
   onClose,
   onDisconnected,
@@ -254,7 +256,9 @@ function TerminalPane({
       {showSnippets && (
         <SnippetsPanel sessionId={id} meta={meta} allSessions={allSessions} />
       )}
-      {showForwards && <ForwardsPanel sessionId={id} />}
+      {showForwards && (
+        <ForwardsPanel sessionId={id} savedConnId={savedConnId} />
+      )}
       <div className="term-row">
         <div ref={containerRef} className="term-container" />
         {showFiles && <FileBrowser sessionId={id} active={active} />}

@@ -9,12 +9,20 @@ interface ForwardInfo {
   remotePort: number;
 }
 
-interface Props {
-  sessionId: number;
+interface SavedForward {
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
 }
 
-function ForwardsPanel({ sessionId }: Props) {
+interface Props {
+  sessionId: number;
+  savedConnId?: string;
+}
+
+function ForwardsPanel({ sessionId, savedConnId }: Props) {
   const [forwards, setForwards] = useState<ForwardInfo[]>([]);
+  const [pinned, setPinned] = useState<SavedForward[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [localPort, setLocalPort] = useState("");
   const [remoteHost, setRemoteHost] = useState("localhost");
@@ -31,8 +39,61 @@ function ForwardsPanel({ sessionId }: Props) {
 
   useEffect(() => {
     refresh();
+    if (savedConnId) {
+      invoke<{ id: string; forwards: SavedForward[] }[]>("connections_list")
+        .then((list) => {
+          const conn = list.find((c) => c.id === savedConnId);
+          if (conn) setPinned(conn.forwards ?? []);
+        })
+        .catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  function isPinned(f: ForwardInfo): boolean {
+    return pinned.some(
+      (p) =>
+        p.localPort === f.localPort &&
+        p.remoteHost === f.remoteHost &&
+        p.remotePort === f.remotePort,
+    );
+  }
+
+  async function togglePin(f: ForwardInfo) {
+    if (!savedConnId) return;
+    const next = !isPinned(f);
+    try {
+      await invoke("forward_pin", {
+        connId: savedConnId,
+        localPort: f.localPort,
+        remoteHost: f.remoteHost,
+        remotePort: f.remotePort,
+        pinned: next,
+      });
+      setPinned((prev) => {
+        const without = prev.filter(
+          (p) =>
+            !(
+              p.localPort === f.localPort &&
+              p.remoteHost === f.remoteHost &&
+              p.remotePort === f.remotePort
+            ),
+        );
+        return next
+          ? [
+              ...without,
+              {
+                localPort: f.localPort,
+                remoteHost: f.remoteHost,
+                remotePort: f.remotePort,
+              },
+            ]
+          : without;
+      });
+    } catch (err) {
+      setError(String(err));
+    }
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -73,9 +134,25 @@ function ForwardsPanel({ sessionId }: Props) {
             <span className="forwards-desc">
               127.0.0.1:{f.localPort} → {f.remoteHost}:{f.remotePort}
             </span>
-            <button type="button" title="Stop" onClick={() => stop(f.id)}>
-              ×
-            </button>
+            <span>
+              {savedConnId && (
+                <button
+                  type="button"
+                  className={isPinned(f) ? "fw-pin pinned" : "fw-pin"}
+                  title={
+                    isPinned(f)
+                      ? "Pinned: starts automatically on connect — click to unpin"
+                      : "Pin: start automatically when this connection opens"
+                  }
+                  onClick={() => togglePin(f)}
+                >
+                  {isPinned(f) ? "★" : "☆"}
+                </button>
+              )}
+              <button type="button" title="Stop" onClick={() => stop(f.id)}>
+                ×
+              </button>
+            </span>
           </div>
         ))}
         {forwards.length === 0 && (

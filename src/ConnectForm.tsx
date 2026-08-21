@@ -50,7 +50,7 @@ interface Props {
     id: number,
     title: string,
     meta: SessionMeta,
-    opts?: { openFiles?: boolean },
+    opts?: { openFiles?: boolean; savedId?: string },
   ) => void;
   onOpenS3: (storageId: string, title: string) => void;
 }
@@ -119,7 +119,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
           port: c.port,
           name: c.name || `${c.user}@${c.host}`,
         },
-        opts,
+        { ...opts, savedId: c.id },
       );
     } catch (err) {
       const issue = asHostKeyIssue(err);

@@ -74,10 +74,9 @@ pub async fn start_forward(
     Ok((bound, stop_tx))
 }
 
-#[tauri::command]
-pub async fn forward_start(
-    sessions: State<'_, SshSessions>,
-    forwards: State<'_, Forwards>,
+pub async fn start_for_session(
+    sessions: &SshSessions,
+    forwards: &Forwards,
     session_id: u32,
     local_port: u16,
     remote_host: String,
@@ -107,6 +106,55 @@ pub async fn forward_start(
         .unwrap()
         .insert(id, (info.clone(), stop_tx));
     Ok(info)
+}
+
+#[tauri::command]
+pub async fn forward_start(
+    sessions: State<'_, SshSessions>,
+    forwards: State<'_, Forwards>,
+    session_id: u32,
+    local_port: u16,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<ForwardInfo, String> {
+    start_for_session(
+        &sessions,
+        &forwards,
+        session_id,
+        local_port,
+        remote_host,
+        remote_port,
+    )
+    .await
+}
+
+/// Pin or unpin a forward on a saved connection; pinned forwards
+/// auto-start every time that connection opens.
+#[tauri::command]
+pub fn forward_pin(
+    lock: State<'_, crate::connections::StoreLock>,
+    conn_id: String,
+    local_port: u16,
+    remote_host: String,
+    remote_port: u16,
+    pinned: bool,
+) -> Result<(), String> {
+    let _guard = lock.0.lock().unwrap();
+    let mut list = crate::connections::load_all()?;
+    let conn = list
+        .iter_mut()
+        .find(|c| c.id == conn_id)
+        .ok_or("saved connection not found")?;
+    let entry = crate::connections::SavedForward {
+        local_port,
+        remote_host,
+        remote_port,
+    };
+    conn.forwards.retain(|f| *f != entry);
+    if pinned {
+        conn.forwards.push(entry);
+    }
+    crate::connections::save_all(&list)
 }
 
 #[tauri::command]

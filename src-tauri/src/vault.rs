@@ -477,6 +477,7 @@ pub fn import_backup(path: &str, password: &str) -> Result<ImportSummary, String
                 },
                 has_password,
                 jump: String::new(),
+                forwards: Vec::new(),
             });
             summary.connections += 1;
         }
@@ -574,6 +575,7 @@ mod tests {
                 key_path: String::new(),
                 has_password: false,
                 jump: String::new(),
+                forwards: Vec::new(),
             },
             SavedConnection {
                 id: "id-b".into(),
@@ -584,6 +586,7 @@ mod tests {
                 key_path: String::new(),
                 has_password: false,
                 jump: "id-a".into(),
+                forwards: Vec::new(),
             },
         ];
         connections::save_all(&conns).unwrap();

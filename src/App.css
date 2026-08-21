@@ -633,6 +633,14 @@ body,
   color: var(--danger);
 }
 
+.forwards-row .fw-pin:hover {
+  color: var(--accent);
+}
+
+.forwards-row .fw-pin.pinned {
+  color: var(--accent);
+}
+
 .forwards-form {
   display: flex;
   align-items: center;

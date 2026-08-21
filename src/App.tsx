@@ -15,6 +15,7 @@ type Tab =
       sshId: number;
       title: string;
       meta: SessionMeta;
+      savedId?: string;
       disconnected: boolean;
     }
   | { kind: "s3"; key: string; storageId: string; title: string };
@@ -41,12 +42,20 @@ function App() {
     sshId: number,
     title: string,
     meta: SessionMeta,
-    opts?: { openFiles?: boolean },
+    opts?: { openFiles?: boolean; savedId?: string },
   ) {
     const key = `ssh-${sshId}`;
     setTabs((prev) => [
       ...prev,
-      { kind: "ssh", key, sshId, title, meta, disconnected: false },
+      {
+        kind: "ssh",
+        key,
+        sshId,
+        title,
+        meta,
+        savedId: opts?.savedId,
+        disconnected: false,
+      },
     ]);
     if (opts?.openFiles) {
       setFilesOpen((prev) => new Set(prev).add(key));
@@ -217,6 +226,7 @@ function App() {
                 showForwards={forwardsOpen.has(t.key)}
                 showSnippets={snippetsOpen.has(t.key)}
                 meta={t.meta}
+                savedConnId={t.savedId}
                 allSessions={liveSessions}
                 onClose={() => closeTab(t.key)}
                 onDisconnected={() => markDisconnected(t.key)}

@@ -122,6 +122,7 @@ mod tests {
                 key_path: "C:\\keys\\id".into(),
                 has_password: false,
                 jump: "b".into(),
+                forwards: Vec::new(),
             },
             SavedConnection {
                 id: "b".into(),
@@ -132,6 +133,7 @@ mod tests {
                 key_path: String::new(),
                 has_password: false,
                 jump: String::new(),
+                forwards: Vec::new(),
             },
         ];
         let block = block_for(&conns).join("\n");

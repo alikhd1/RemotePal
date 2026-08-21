@@ -14,6 +14,14 @@ use crate::ssh::{self, ConnectError, ConnectSpec, SshSessions};
 
 pub(crate) const KEYRING_SERVICE: &str = "RemotePal";
 
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedForward {
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedConnection {
@@ -31,6 +39,9 @@ pub struct SavedConnection {
     /// id of another saved connection used as jump host ("" = direct)
     #[serde(default)]
     pub jump: String,
+    /// local forwards started automatically on connect
+    #[serde(default)]
+    pub forwards: Vec<SavedForward>,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -175,19 +186,34 @@ pub fn resolve_chain(
 pub async fn ssh_connect_saved(
     app: AppHandle,
     sessions: State<'_, SshSessions>,
+    forwards: State<'_, crate::forwards::Forwards>,
     lock: State<'_, StoreLock>,
     id: String,
 ) -> Result<u32, ConnectError> {
-    let (target, jump) = {
+    let (target, jump, saved_forwards) = {
         let _guard = lock.0.lock().unwrap();
         let conn = load_all()?
             .into_iter()
             .find(|c| c.id == id)
             .ok_or_else(|| ConnectError::other("saved connection not found"))?;
-        (spec_from_saved(&conn)?, conn.jump)
+        (spec_from_saved(&conn)?, conn.jump, conn.forwards)
     };
     let specs = resolve_chain(&lock, target, Some(jump))?;
-    ssh::start_session(app, &sessions, &specs).await
+    let session_id = ssh::start_session(app, &sessions, &specs).await?;
+    // auto-start pinned forwards; individual failures (port in use)
+    // are non-fatal — the Forwards panel shows what actually started
+    for fwd in saved_forwards {
+        let _ = crate::forwards::start_for_session(
+            &sessions,
+            &forwards,
+            session_id,
+            fwd.local_port,
+            fwd.remote_host,
+            fwd.remote_port,
+        )
+        .await;
+    }
+    Ok(session_id)
 }
 
 /// ssh-copy-id: append a public key to the server's authorized_keys.
@@ -287,6 +313,7 @@ mod tests {
             key_path: String::new(),
             has_password: false,
             jump: String::new(),
+            forwards: Vec::new(),
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();

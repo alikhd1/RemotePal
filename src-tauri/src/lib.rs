@@ -51,6 +51,7 @@ pub fn run() {
             forwards::forward_start,
             forwards::forward_stop,
             forwards::forwards_list,
+            forwards::forward_pin,
             keys::keys_list,
             keys::key_generate,
             keys::key_import_file,
