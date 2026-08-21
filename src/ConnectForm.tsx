@@ -23,6 +23,7 @@ import VaultCard from "./VaultCard";
 import KeysCard, { type VaultKey } from "./KeysCard";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import OsIcon, { OS_CHOICES } from "./osIcons";
+import { Combo, Select } from "./Dropdown";
 import type { SessionMeta } from "./SnippetsPanel";
 
 export interface SavedForward {
@@ -851,51 +852,48 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
               </label>
               <label>
                 Private key path
-                <input
+                <Combo
                   value={keyPath}
-                  onChange={(e) => setKeyPath(e.currentTarget.value)}
+                  onChange={setKeyPath}
                   placeholder="C:\Users\me\.ssh\id_ed25519 (optional)"
-                  list="vault-keys"
+                  options={vaultKeys.map((k) => ({
+                    value: k.path,
+                    label: k.name,
+                    icon: <KeyRound size={15} />,
+                  }))}
+                  empty="No vault key matches"
                 />
-                <datalist id="vault-keys">
-                  {vaultKeys.map((k) => (
-                    <option key={k.path} value={k.path}>
-                      {k.name}
-                    </option>
-                  ))}
-                </datalist>
               </label>
               <div className="field-row">
                 {saved.filter((c) => c.id !== editingId).length > 0 && (
                   <label className="grow">
                     Jump via
-                    <select
+                    <Select
                       value={jump}
-                      onChange={(e) => setJump(e.currentTarget.value)}
-                    >
-                      <option value="">(direct)</option>
-                      {saved
-                        .filter((c) => c.id !== editingId)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name || `${c.user}@${c.host}`}
-                          </option>
-                        ))}
-                    </select>
+                      onChange={setJump}
+                      options={[
+                        { value: "", label: "(direct)" },
+                        ...saved
+                          .filter((c) => c.id !== editingId)
+                          .map((c) => ({
+                            value: c.id,
+                            label: c.name || `${c.user}@${c.host}`,
+                            icon: <OsIcon os={c.os} size={18} />,
+                          })),
+                      ]}
+                    />
                   </label>
                 )}
                 <label className="grow">
                   OS icon
-                  <select
+                  <Select
                     value={os}
-                    onChange={(e) => setOs(e.currentTarget.value)}
-                  >
-                    {OS_CHOICES.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setOs}
+                    options={OS_CHOICES.map((o) => ({
+                      ...o,
+                      icon: <OsIcon os={o.value} size={18} />,
+                    }))}
+                  />
                 </label>
               </div>
               <label className="check">
@@ -932,21 +930,21 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
                     </label>
                     <label className="grow">
                       Group
-                      <input
+                      <Combo
                         value={group}
-                        onChange={(e) => setGroup(e.currentTarget.value)}
+                        onChange={setGroup}
                         placeholder="(optional)"
-                        list="saved-groups"
-                      />
-                      <datalist id="saved-groups">
-                        {[
+                        options={[
                           ...new Set(
                             saved.map((c) => c.group).filter(Boolean),
                           ),
-                        ].map((g) => (
-                          <option key={g} value={g} />
-                        ))}
-                      </datalist>
+                        ].map((g) => ({
+                          value: g,
+                          label: g,
+                          icon: <FolderClosed size={15} />,
+                        }))}
+                        empty="New group"
+                      />
                     </label>
                   </div>
                   <label className="check">

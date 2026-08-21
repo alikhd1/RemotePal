@@ -6,6 +6,7 @@ import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
 import SplitLayout from "./SplitLayout";
 import OsIcon from "./osIcons";
+import { Select } from "./Dropdown";
 import {
   findPane,
   leaves,
@@ -18,7 +19,7 @@ import {
   type SshPane,
 } from "./splitTree";
 import type { SessionMeta } from "./SnippetsPanel";
-import { THEME_NAMES, applyTheme, currentTheme, initTheme } from "./themes";
+import { THEMES, THEME_NAMES, applyTheme, currentTheme, initTheme } from "./themes";
 import "./App.css";
 
 initTheme();
@@ -306,21 +307,31 @@ function App() {
               </button>
             </>
           )}
-          <select
-            className="theme-select"
+          <Select
+            size="sm"
+            align="right"
             title="Theme"
             value={theme}
-            onChange={(e) => {
-              applyTheme(e.currentTarget.value);
-              setTheme(e.currentTarget.value);
+            options={THEME_NAMES.map((name) => ({
+              value: name,
+              label: name,
+              icon: (
+                <span
+                  className="theme-swatch"
+                  style={{
+                    background: THEMES[name].app.bg,
+                    borderColor: THEMES[name].app.border,
+                  }}
+                >
+                  <i style={{ background: THEMES[name].app.accent }} />
+                </span>
+              ),
+            }))}
+            onChange={(name) => {
+              applyTheme(name);
+              setTheme(name);
             }}
-          >
-            {THEME_NAMES.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       </div>
       {splitError && (
