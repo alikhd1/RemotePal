@@ -263,15 +263,6 @@ body,
   word-break: break-word;
 }
 
-.connect-notice {
-  padding: 8px 10px;
-  font-size: 13px;
-  color: #98c379;
-  background: rgba(152, 195, 121, 0.1);
-  border: 1px solid rgba(152, 195, 121, 0.4);
-  border-radius: 6px;
-}
-
 /* --------------------------------------------------------- layout */
 
 .app {

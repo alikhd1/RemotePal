@@ -13,8 +13,7 @@ Early. Working so far:
   disconnect indicator; hidden sessions stay connected
 - Saved connections: metadata in `~/.remotepal/connections.json`, passwords
   in the Windows Credential Manager (never on disk); one-click connect,
-  edit/delete, and read-only import from the PyQt app's servers.json
-  (passwords and jump hosts are not imported)
+  edit/delete
 
 Not yet ported from the PyQt app: vault encryption/backup, SFTP/S3 browsers, folder sync, port forwards, jump hosts, themes.
 

@@ -16,7 +16,6 @@ pub fn run() {
             connections::connection_save,
             connections::connection_delete,
             connections::ssh_connect_saved,
-            connections::connections_import_legacy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

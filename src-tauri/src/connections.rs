@@ -153,78 +153,12 @@ pub async fn ssh_connect_saved(
     .await
 }
 
-// ------------------------------------------------------ legacy import
-
-#[derive(Deserialize)]
-struct LegacyServer {
-    #[serde(default)]
-    name: String,
-    host: String,
-    #[serde(default)]
-    user: String,
-    #[serde(default = "default_port")]
-    port: u16,
-    #[serde(default)]
-    key: String,
-}
-
-fn default_port() -> u16 {
-    22
-}
-
-/// Import server entries from the PyQt app's servers.json (read-only).
-/// Passwords are not imported: the old app encrypts them with its own
-/// vault scheme. Vault key names resolve to files under keys/.
-#[tauri::command]
-pub fn connections_import_legacy(lock: State<'_, StoreLock>) -> Result<usize, String> {
-    let _guard = lock.0.lock().unwrap();
-    let path = vault_dir()?.join("servers.json");
-    if !path.exists() {
-        return Err("no ~/.remotepal/servers.json found".into());
-    }
-    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let servers: Vec<LegacyServer> =
-        serde_json::from_str(&text).map_err(|e| format!("cannot parse servers.json: {e}"))?;
-    let mut list = load_all()?;
-    let mut imported = 0;
-    for s in servers {
-        if list
-            .iter()
-            .any(|c| c.host == s.host && c.user == s.user && c.port == s.port)
-        {
-            continue;
-        }
-        let key_file = vault_dir()?.join("keys").join(&s.key);
-        let key_path = if !s.key.is_empty() && key_file.is_file() {
-            key_file.to_string_lossy().into_owned()
-        } else {
-            String::new()
-        };
-        list.push(SavedConnection {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: if s.name.is_empty() {
-                format!("{}@{}", s.user, s.host)
-            } else {
-                s.name
-            },
-            host: s.host,
-            port: s.port,
-            user: s.user,
-            key_path,
-            has_password: false,
-        });
-        imported += 1;
-    }
-    save_all(&list)?;
-    Ok(imported)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn store_roundtrip_and_legacy_import_mapping() {
+    fn store_roundtrip() {
         let dir = std::env::temp_dir().join(format!(
             "remotepal-test-{}",
             uuid::Uuid::new_v4()
@@ -251,12 +185,6 @@ mod tests {
         let json = serde_json::to_string(&conn).unwrap();
         assert!(json.contains("\"keyPath\""), "{json}");
         assert!(json.contains("\"hasPassword\""), "{json}");
-
-        // legacy defaults: missing port/user/key tolerated
-        let legacy: Vec<LegacyServer> =
-            serde_json::from_str(r#"[{"host": "x", "name": "n"}]"#).unwrap();
-        assert_eq!(legacy[0].port, 22);
-        assert_eq!(legacy[0].user, "");
 
         std::env::remove_var("REMOTEPAL_VAULT_DIR");
         let _ = std::fs::remove_dir_all(&dir);

@@ -21,7 +21,6 @@ function ConnectForm({ onConnected }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -49,7 +48,6 @@ function ConnectForm({ onConnected }: Props) {
     if (busyId) return;
     setBusyId(c.id);
     setError(null);
-    setNotice(null);
     try {
       const id = await invoke<number>("ssh_connect_saved", { id: c.id });
       onConnected(id, c.name || `${c.user}@${c.host}`);
@@ -99,23 +97,10 @@ function ConnectForm({ onConnected }: Props) {
     setRemember(false);
   }
 
-  async function importLegacy() {
-    setError(null);
-    setNotice(null);
-    try {
-      const n = await invoke<number>("connections_import_legacy");
-      setNotice(`Imported ${n} connection${n === 1 ? "" : "s"}.`);
-      refresh();
-    } catch (err) {
-      setError(String(err));
-    }
-  }
-
   async function connect(e: React.FormEvent) {
     e.preventDefault();
     setConnecting(true);
     setError(null);
-    setNotice(null);
     try {
       const title = (save && name) || `${user}@${host}`;
       if (save) {
@@ -206,9 +191,6 @@ function ConnectForm({ onConnected }: Props) {
               </li>
             ))}
           </ul>
-          <button type="button" className="link-btn" onClick={importLegacy}>
-            Import from RemotePal (Python)…
-          </button>
         </div>
 
         <form className="connect-form" onSubmit={connect}>
@@ -302,7 +284,6 @@ function ConnectForm({ onConnected }: Props) {
             {connecting ? "Connecting…" : "Connect"}
           </button>
           {error && <div className="connect-error">{error}</div>}
-          {notice && <div className="connect-notice">{notice}</div>}
         </form>
       </div>
     </div>
