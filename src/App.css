@@ -898,44 +898,6 @@ body,
   border-color: var(--accent);
 }
 
-.files-toolbar {
-  display: flex;
-  gap: 4px;
-  padding: 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.files-toolbar button {
-  padding: 4px 8px;
-  font-size: 12px;
-  color: var(--fg);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.files-toolbar button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.files-delete.confirming {
-  color: #1e1e1e;
-  background: var(--danger);
-  border-color: var(--danger);
-}
-
-.files-mirror {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--fg-dim);
-  cursor: pointer;
-  user-select: none;
-}
-
 .files-inputrow {
   display: flex;
   gap: 4px;

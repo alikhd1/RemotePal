@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 interface S3Object {
   key: string;
@@ -63,6 +64,7 @@ function S3Browser({ storageId, active }: Props) {
   const [inputValue, setInputValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const transferIdRef = useRef<string | null>(null);
   const prefixRef = useRef("");
   void active;
@@ -220,12 +222,8 @@ function S3Browser({ storageId, active }: Props) {
     }
   }
 
-  async function deleteSelected() {
+  async function reallyDelete() {
     if (selectedRows.length === 0) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
     setConfirmDelete(false);
     setError(null);
     try {
@@ -241,6 +239,50 @@ function S3Browser({ storageId, active }: Props) {
       setError(String(err));
       load(prefixRef.current);
     }
+  }
+
+  function menuItems(): MenuItem[] {
+    const items: MenuItem[] = [];
+    const files = selectedRows.filter((r) => !r.isFolder);
+    if (selectedRows.length > 0) {
+      if (singleRow?.isFolder) {
+        items.push({ label: "Open", onClick: () => load(singleRow.id) });
+      }
+      if (files.length > 0 && !transfer) {
+        items.push({
+          label: files.length > 1 ? `Download (${files.length})…` : "Download…",
+          onClick: download,
+        });
+      }
+      if (singleRow && !singleRow.isFolder) {
+        items.push({
+          label: "Rename…",
+          onClick: () => {
+            setInputMode("rename");
+            setInputValue(singleRow.name);
+          },
+        });
+      }
+      items.push(
+        {
+          label:
+            selectedRows.length > 1
+              ? `Delete (${selectedRows.length})…`
+              : selectedRows[0].isFolder
+                ? "Delete recursively…"
+                : "Delete…",
+          danger: true,
+          onClick: () => setConfirmDelete(true),
+        },
+        { label: "", separator: true },
+      );
+    }
+    items.push(
+      { label: "Upload files…", onClick: upload },
+      { label: "", separator: true },
+      { label: "Refresh", onClick: () => load(prefixRef.current) },
+    );
+    return items;
   }
 
   async function submitRename(e: React.FormEvent) {
@@ -279,42 +321,24 @@ function S3Browser({ storageId, active }: Props) {
         </button>
       </div>
 
-      <div className="files-toolbar">
-        <button type="button" onClick={upload} disabled={!!transfer}>
-          Upload
-        </button>
-        <button
-          type="button"
-          onClick={download}
-          disabled={!selectedRows.some((r) => !r.isFolder) || !!transfer}
-        >
-          Download
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (singleRow && !singleRow.isFolder) {
-              setInputMode("rename");
-              setInputValue(singleRow.name);
-            }
-          }}
-          disabled={!singleRow || singleRow.isFolder}
-        >
-          Rename
-        </button>
-        <button
-          type="button"
-          className={confirmDelete ? "files-delete confirming" : "files-delete"}
-          onClick={deleteSelected}
-          disabled={selectedRows.length === 0}
-        >
-          {confirmDelete
-            ? `sure? (${selectedRows.length})`
-            : selectedRows.length > 1
-              ? `Delete (${selectedRows.length})`
-              : "Delete"}
-        </button>
-      </div>
+      {confirmDelete && (
+        <div className="files-inputrow">
+          <span className="files-confirm-text">
+            Delete {selectedRows.length}{" "}
+            {selectedRows.length === 1 ? "item" : "items"}
+            {selectedRows.some((r) => r.isFolder)
+              ? " (folders delete recursively)"
+              : ""}
+            ?
+          </span>
+          <button type="button" className="danger" onClick={reallyDelete}>
+            Delete
+          </button>
+          <button type="button" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       {inputMode === "rename" && (
         <form className="files-inputrow" onSubmit={submitRename}>
@@ -331,12 +355,28 @@ function S3Browser({ storageId, active }: Props) {
         </form>
       )}
 
-      <div className="files-list">
+      <div
+        className="files-list"
+        onContextMenu={(ev) => {
+          ev.preventDefault();
+          setCtxMenu({ x: ev.clientX, y: ev.clientY });
+        }}
+      >
         {rows.map((row) => (
           <div
             key={row.id}
             className={"files-row" + (selected.has(row.id) ? " selected" : "")}
             onClick={(ev) => handleSelect(ev, row)}
+            onContextMenu={(ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (!selected.has(row.id)) {
+                setSelected(new Set([row.id]));
+                setAnchor(row.id);
+              }
+              setConfirmDelete(false);
+              setCtxMenu({ x: ev.clientX, y: ev.clientY });
+            }}
             onDoubleClick={() => {
               if (row.isFolder) load(row.id);
             }}
@@ -380,6 +420,14 @@ function S3Browser({ storageId, active }: Props) {
       )}
 
       {error && <div className="files-error">{error}</div>}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={menuItems()}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }
