@@ -3,6 +3,8 @@ name = "remotepal"
 version = "0.1.0"
 description = "RemotePal SSH manager"
 authors = ["Ali khandi <alikhandi@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/alikhd1/RemotePal"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
