@@ -1929,6 +1929,45 @@ body,
   cursor: pointer;
 }
 
+/* thin vitals strip above the terminal */
+.server-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.si-host {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.si-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.si-label {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--fg-dim);
+}
+
+.si-dim {
+  color: var(--fg-dim);
+}
+
 .term-container {
   flex: 1;
   min-height: 0;

@@ -9,6 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
 import AiPanel from "./AiPanel";
+import ServerInfoBar from "./ServerInfoBar";
 import SnippetsPanel, {
   type LiveSession,
   type SessionMeta,
@@ -291,6 +292,11 @@ function TerminalPane({
       {showForwards && (
         <ForwardsPanel sessionId={id} savedConnId={savedConnId} />
       )}
+      <ServerInfoBar
+        sessionId={id}
+        meta={meta}
+        active={active && !disconnected}
+      />
       <div className="term-row">
         <div ref={containerRef} className="term-container" />
         {showFiles && <FileBrowser sessionId={id} active={active} />}

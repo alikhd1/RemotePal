@@ -446,6 +446,90 @@ pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String),
     Ok((status, stderr))
 }
 
+/// A raw snapshot of a Linux server's vitals, read from /proc + df. The
+/// frontend info strip turns consecutive snapshots into CPU% and network
+/// rates and formats the rest. Fields are 0 when unavailable (e.g. a
+/// non-Linux host with no /proc), which the frontend treats as "hide".
+#[derive(Debug, Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerStats {
+    pub cores: u32,
+    pub load1: f64,
+    /// total and idle CPU jiffies (idle includes iowait)
+    pub cpu_total: u64,
+    pub cpu_idle: u64,
+    pub mem_total_kb: u64,
+    pub mem_avail_kb: u64,
+    pub disk_total_kb: u64,
+    pub disk_used_kb: u64,
+    pub net_rx: u64,
+    pub net_tx: u64,
+    pub uptime_secs: f64,
+}
+
+/// One cheap snapshot: no sleeps, so it returns fast; the frontend derives
+/// rates/percentages from the delta between polls.
+const STATS_CMD: &str = r#"nproc 2>/dev/null | awk '{print "cores", $1}'
+awk '/^cpu /{print "cpu", $2+$3+$4+$5+$6+$7+$8+$9, $5+$6}' /proc/stat 2>/dev/null
+awk '/^MemTotal/{t=$2}/^MemAvailable/{a=$2}END{print "mem", t, a}' /proc/meminfo 2>/dev/null
+df -kP / 2>/dev/null | awk 'NR==2{print "disk", $2, $3}'
+awk 'NR>2 && $1!="lo:"{rx+=$2; tx+=$10}END{print "net", rx, tx}' /proc/net/dev 2>/dev/null
+awk '{print "load", $1}' /proc/loadavg 2>/dev/null
+awk '{print "up", $1}' /proc/uptime 2>/dev/null"#;
+
+fn next_num<T: std::str::FromStr>(it: &mut std::str::SplitWhitespace<'_>) -> Option<T> {
+    it.next().and_then(|v| v.parse().ok())
+}
+
+fn parse_stats(out: &str) -> ServerStats {
+    let mut s = ServerStats::default();
+    for line in out.lines() {
+        let mut it = line.split_whitespace();
+        match it.next() {
+            Some("cores") => s.cores = next_num(&mut it).unwrap_or(0),
+            Some("cpu") => {
+                s.cpu_total = next_num(&mut it).unwrap_or(0);
+                s.cpu_idle = next_num(&mut it).unwrap_or(0);
+            }
+            Some("mem") => {
+                s.mem_total_kb = next_num(&mut it).unwrap_or(0);
+                s.mem_avail_kb = next_num(&mut it).unwrap_or(0);
+            }
+            Some("disk") => {
+                s.disk_total_kb = next_num(&mut it).unwrap_or(0);
+                s.disk_used_kb = next_num(&mut it).unwrap_or(0);
+            }
+            Some("net") => {
+                s.net_rx = next_num(&mut it).unwrap_or(0);
+                s.net_tx = next_num(&mut it).unwrap_or(0);
+            }
+            Some("load") => s.load1 = next_num(&mut it).unwrap_or(0.0),
+            Some("up") => s.uptime_secs = next_num(&mut it).unwrap_or(0.0),
+            _ => {}
+        }
+    }
+    s
+}
+
+/// Snapshot a live session's server vitals over a dedicated exec channel.
+#[tauri::command]
+pub async fn server_stats(
+    state: State<'_, SshSessions>,
+    id: u32,
+) -> Result<ServerStats, String> {
+    let handle = state
+        .maps
+        .handles
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or("no such session")?;
+    let cap =
+        exec_capture_capped(&handle, STATS_CMD, std::time::Duration::from_secs(8), 8192).await?;
+    Ok(parse_stats(&cap.stdout))
+}
+
 /// Slugs the frontend has icons for; anything else degrades to "linux".
 const KNOWN_OS_IDS: &[&str] = &[
     "ubuntu", "debian", "fedora", "centos", "arch", "alpine", "kali", "gentoo", "nixos",
@@ -730,6 +814,33 @@ mod tests {
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ67aMfdava0ARCxRfHgX0i7CuJSVXC6Fttj8I2fg+xA";
     const KEY_B: &str =
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAImG70JQNvehB5oxvEa76XsLgphdNRQNBNDTLp9ZLS";
+
+    #[test]
+    fn stats_parsing() {
+        let out = "cores 8\ncpu 123456 100000\nmem 16384000 8192000\ndisk 209715200 104857600\nnet 5000 6000\nload 0.42\nup 98765.43\n";
+        let s = parse_stats(out);
+        assert_eq!(s.cores, 8);
+        assert_eq!(s.cpu_total, 123456);
+        assert_eq!(s.cpu_idle, 100000);
+        assert_eq!(s.mem_total_kb, 16384000);
+        assert_eq!(s.mem_avail_kb, 8192000);
+        assert_eq!(s.disk_total_kb, 209715200);
+        assert_eq!(s.disk_used_kb, 104857600);
+        assert_eq!(s.net_rx, 5000);
+        assert_eq!(s.net_tx, 6000);
+        assert!((s.load1 - 0.42).abs() < f64::EPSILON);
+        assert!((s.uptime_secs - 98765.43).abs() < 0.01);
+    }
+
+    #[test]
+    fn stats_parsing_tolerates_missing_lines() {
+        // a host without /proc (or a failed df) yields zeros, not an error
+        let s = parse_stats("cores 4\ngarbage here\n");
+        assert_eq!(s.cores, 4);
+        assert_eq!(s.mem_total_kb, 0);
+        assert_eq!(s.disk_total_kb, 0);
+        assert_eq!(s.load1, 0.0);
+    }
 
     #[test]
     fn os_slug_parsing() {
