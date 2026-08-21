@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Cloud, Plus, SquareTerminal, X } from "lucide-react";
+import { Bot, Cloud, Plus, SquareTerminal, X } from "lucide-react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
@@ -313,12 +313,14 @@ function App() {
               </button>
               <button
                 className={
-                  "files-toggle" + (aiOpen.has(activePaneId) ? " active" : "")
+                  "files-toggle ai-toggle" +
+                  (aiOpen.has(activePaneId) ? " active" : "")
                 }
-                title="Toggle AI copilot"
+                title="Toggle AI Copilot"
                 onClick={() => toggleIn(setAiOpen, activePaneId)}
               >
-                AI
+                <Bot size={16} />
+                AI Copilot
               </button>
             </>
           )}

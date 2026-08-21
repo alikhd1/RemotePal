@@ -1292,6 +1292,26 @@ body,
   border-color: var(--accent);
 }
 
+/* the AI copilot toggle stands out from the plain panel toggles so it's
+   discoverable — accent-outlined at rest, filled on hover/active */
+.ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ai-toggle:hover,
+.ai-toggle.active {
+  color: #1e1e1e;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ----------------------------------------------------- split panes */
 
 .split-root {
