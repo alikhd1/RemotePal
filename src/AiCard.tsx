@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Select } from "./Dropdown";
+import ProviderIcon from "./ProviderIcon";
 import {
   getProviders,
   getProvider,
@@ -147,7 +148,11 @@ function AiCard() {
       <label className="ai-field-label">Provider</label>
       <Select
         value={provider}
-        options={providers.map((p) => ({ value: p.id, label: p.label }))}
+        options={providers.map((p) => ({
+          value: p.id,
+          label: p.label,
+          icon: <ProviderIcon id={p.id} label={p.label} size={16} />,
+        }))}
         onChange={switchProvider}
       />
 

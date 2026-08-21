@@ -25,10 +25,10 @@ import {
   Check,
   RotateCw,
   SendHorizontal,
-  Sparkles,
   Square,
   X,
 } from "lucide-react";
+import ProviderIcon from "./ProviderIcon";
 import Markdown from "./Markdown";
 
 // Anthropic content blocks, stored verbatim.
@@ -594,7 +594,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
             options={getProviders().map((p) => ({
               value: p.id,
               label: p.label,
-              icon: <Sparkles size={12} />,
+              icon: <ProviderIcon id={p.id} label={p.label} size={13} />,
             }))}
             onChange={switchProvider}
           />
