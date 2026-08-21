@@ -31,6 +31,11 @@ function localBasename(path: string): string {
   return parts[parts.length - 1] || "file";
 }
 
+function joinLocal(dir: string, name: string): string {
+  const sep = dir.includes("\\") ? "\\" : "/";
+  return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
+}
+
 function humanSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -59,7 +64,8 @@ function FileBrowser({ sessionId }: Props) {
   const [path, setPath] = useState<string | null>(null);
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<SftpEntry[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inputMode, setInputMode] = useState<"mkdir" | "rename" | null>(null);
   const [inputValue, setInputValue] = useState("");
@@ -77,7 +83,8 @@ function FileBrowser({ sessionId }: Props) {
 
   async function load(dir: string) {
     setError(null);
-    setSelected(null);
+    setSelected(new Set());
+    setAnchor(null);
     setConfirmDelete(false);
     setInputMode(null);
     try {
@@ -140,7 +147,34 @@ function FileBrowser({ sessionId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  const selectedEntry = entries.find((e) => e.name === selected) ?? null;
+  const selectedEntries = entries.filter((e) => selected.has(e.name));
+  const selectedEntry =
+    selectedEntries.length === 1 ? selectedEntries[0] : null;
+
+  function handleSelect(ev: React.MouseEvent, entry: SftpEntry) {
+    setConfirmDelete(false);
+    const name = entry.name;
+    if (ev.ctrlKey) {
+      const next = new Set(selected);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      setSelected(next);
+      setAnchor(name);
+      return;
+    }
+    if (ev.shiftKey && anchor) {
+      const names = entries.map((e) => e.name);
+      const a = names.indexOf(anchor);
+      const b = names.indexOf(name);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected(new Set(names.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    setSelected(new Set([name]));
+    setAnchor(name);
+  }
 
   async function upload() {
     if (!path) return;
@@ -158,20 +192,42 @@ function FileBrowser({ sessionId }: Props) {
   }
 
   async function download() {
-    if (!path || !selectedEntry || selectedEntry.isDir) return;
-    const local = await saveDialog({
-      defaultPath: selectedEntry.name,
-      title: "Download to",
+    if (!path) return;
+    const files = selectedEntries.filter((e) => !e.isDir);
+    if (files.length === 0) return;
+    if (files.length === 1) {
+      const file = files[0];
+      const local = await saveDialog({
+        defaultPath: file.name,
+        title: "Download to",
+      });
+      if (typeof local !== "string") return;
+      await runTransfer(`↓ ${file.name}`, (tid) =>
+        invoke<number>("sftp_download", {
+          id: sessionId,
+          remotePath: joinPath(path, file.name),
+          localPath: local,
+          transferId: tid,
+        }),
+      );
+      return;
+    }
+    const dir = await openDialog({
+      directory: true,
+      title: "Download into folder",
     });
-    if (typeof local !== "string") return;
-    await runTransfer(`↓ ${selectedEntry.name}`, (tid) =>
-      invoke<number>("sftp_download", {
-        id: sessionId,
-        remotePath: joinPath(path, selectedEntry.name),
-        localPath: local,
-        transferId: tid,
-      }),
-    );
+    if (typeof dir !== "string") return;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      await runTransfer(`↓ ${file.name} (${i + 1}/${files.length})`, (tid) =>
+        invoke<number>("sftp_download", {
+          id: sessionId,
+          remotePath: joinPath(path, file.name),
+          localPath: joinLocal(dir, file.name),
+          transferId: tid,
+        }),
+      );
+    }
   }
 
   async function runTransfer(
@@ -220,7 +276,7 @@ function FileBrowser({ sessionId }: Props) {
   }
 
   async function deleteSelected() {
-    if (!path || !selectedEntry) return;
+    if (!path || selectedEntries.length === 0) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
@@ -228,14 +284,17 @@ function FileBrowser({ sessionId }: Props) {
     setConfirmDelete(false);
     setError(null);
     try {
-      await invoke("sftp_delete", {
-        id: sessionId,
-        path: joinPath(path, selectedEntry.name),
-        isDir: selectedEntry.isDir,
-      });
+      for (const entry of selectedEntries) {
+        await invoke("sftp_delete", {
+          id: sessionId,
+          path: joinPath(path, entry.name),
+          isDir: entry.isDir,
+        });
+      }
       load(path);
     } catch (err) {
       setError(String(err));
+      load(path);
     }
   }
 
@@ -275,7 +334,9 @@ function FileBrowser({ sessionId }: Props) {
         <button
           type="button"
           onClick={download}
-          disabled={!selectedEntry || selectedEntry.isDir || !!transfer}
+          disabled={
+            !selectedEntries.some((e) => !e.isDir) || !!transfer
+          }
         >
           Download
         </button>
@@ -325,9 +386,13 @@ function FileBrowser({ sessionId }: Props) {
           type="button"
           className={confirmDelete ? "files-delete confirming" : "files-delete"}
           onClick={deleteSelected}
-          disabled={!selectedEntry}
+          disabled={selectedEntries.length === 0}
         >
-          {confirmDelete ? "sure?" : "Delete"}
+          {confirmDelete
+            ? `sure? (${selectedEntries.length})`
+            : selectedEntries.length > 1
+              ? `Delete (${selectedEntries.length})`
+              : "Delete"}
         </button>
       </div>
 
@@ -352,12 +417,9 @@ function FileBrowser({ sessionId }: Props) {
           <div
             key={entry.name}
             className={
-              "files-row" + (selected === entry.name ? " selected" : "")
+              "files-row" + (selected.has(entry.name) ? " selected" : "")
             }
-            onClick={() => {
-              setSelected(entry.name);
-              setConfirmDelete(false);
-            }}
+            onClick={(ev) => handleSelect(ev, entry)}
             onDoubleClick={() => {
               if (entry.isDir && path) load(joinPath(path, entry.name));
             }}
