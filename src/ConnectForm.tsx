@@ -10,6 +10,7 @@ export interface SavedConnection {
   user: string;
   keyPath: string;
   hasPassword: boolean;
+  jump: string;
 }
 
 export interface HostKeyIssue {
@@ -62,6 +63,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState("");
+  const [jump, setJump] = useState("");
   const [save, setSave] = useState(false);
   const [remember, setRemember] = useState(false);
 
@@ -135,6 +137,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     setPort(String(c.port));
     setUser(c.user);
     setKeyPath(c.keyPath);
+    setJump(c.jump || "");
     setPassword("");
     setSave(true);
     setRemember(false);
@@ -148,6 +151,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     setUser("");
     setPassword("");
     setKeyPath("");
+    setJump("");
     setSave(false);
     setRemember(false);
   }
@@ -172,6 +176,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
             user,
             keyPath,
             hasPassword: false,
+            jump,
           },
           // Some(pw) stores, Some("") clears, null leaves untouched
           password: remember ? password : null,
@@ -185,6 +190,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
         user,
         password: password || null,
         keyPath: keyPath || null,
+        jumpId: jump || null,
       });
       onConnected(id, title);
     } catch (err) {
@@ -316,6 +322,24 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
               placeholder="C:\Users\me\.ssh\id_ed25519 (optional)"
             />
           </label>
+          {saved.filter((c) => c.id !== editingId).length > 0 && (
+            <label>
+              Jump via
+              <select
+                value={jump}
+                onChange={(e) => setJump(e.currentTarget.value)}
+              >
+                <option value="">(direct)</option>
+                {saved
+                  .filter((c) => c.id !== editingId)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || `${c.user}@${c.host}`}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
           <label className="check">
             <input
               type="checkbox"

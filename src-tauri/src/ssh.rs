@@ -2,10 +2,12 @@
 //! commands talk to it through an mpsc sender, and PTY output reaches
 //! the frontend as base64 `ssh-data-{id}` events.
 //!
-//! Host keys are verified against ~/.remotepal/known_hosts (the same
-//! file the PyQt app maintains). Unknown or changed keys fail the
-//! connect with a structured error so the UI can show a trust dialog;
-//! `trust_host_key` records the key and the frontend retries.
+//! Connections are described as a chain of ConnectSpecs (jump hosts
+//! first, target last); every hop after the first runs over a
+//! direct-tcpip channel of the previous one. Host keys are verified
+//! per hop against ~/.remotepal/known_hosts (the same file the PyQt
+//! app maintains); unknown or changed keys fail the connect with a
+//! structured error so the UI can show a trust dialog.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,19 +58,31 @@ impl From<String> for ConnectError {
     }
 }
 
+/// One hop of a connection chain.
+#[derive(Debug, Clone)]
+pub struct ConnectSpec {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: Option<String>,
+    pub key_path: Option<String>,
+}
+
 pub enum TermCmd {
     Data(Vec<u8>),
     Resize { cols: u32, rows: u32 },
     Close,
 }
 
+pub type SshHandle = client::Handle<KnownHostsHandler>;
+
 /// Everything keyed by session id. The pump task owns a clone of the
 /// Arc so it can clean up after itself; SFTP sessions are opened lazily
-/// on the stored SSH handle.
+/// on the stored SSH handle (the chain's final hop).
 #[derive(Default)]
 pub struct SessionMaps {
     pub senders: Mutex<HashMap<u32, mpsc::UnboundedSender<TermCmd>>>,
-    pub handles: Mutex<HashMap<u32, Arc<client::Handle<KnownHostsHandler>>>>,
+    pub handles: Mutex<HashMap<u32, Arc<SshHandle>>>,
     pub sftp: Mutex<HashMap<u32, Arc<russh_sftp::client::SftpSession>>>,
 }
 
@@ -84,7 +98,7 @@ fn known_hosts_file() -> Result<PathBuf, String> {
 
 /// Verifies the server key against the vault known_hosts file. On
 /// anything but a match it parks a structured verdict in `issue` and
-/// rejects, so `open_shell` can turn the generic handshake failure
+/// rejects, so the connect can turn the generic handshake failure
 /// into a useful error.
 pub struct KnownHostsHandler {
     host: String,
@@ -188,39 +202,8 @@ pub fn trust_host_key(host: String, port: u16, key_openssh: String) -> Result<()
     trust_host_key_inner(&host, port, &key_openssh)
 }
 
-/// Connect, authenticate, and open an interactive shell channel.
-/// Tauri-free so the smoke-test example can drive it headlessly.
-pub async fn open_shell(
-    host: &str,
-    port: u16,
-    user: &str,
-    password: Option<String>,
-    key_path: Option<String>,
-) -> Result<
-    (
-        client::Handle<KnownHostsHandler>,
-        russh::Channel<client::Msg>,
-    ),
-    ConnectError,
-> {
-    let config = Arc::new(client::Config::default());
-    let issue_slot = Arc::new(Mutex::new(None));
-    let handler = KnownHostsHandler {
-        host: host.to_string(),
-        port,
-        issue: Arc::clone(&issue_slot),
-    };
-    let mut session = match client::connect(config, (host, port), handler).await {
-        Ok(session) => session,
-        Err(e) => {
-            if let Some(issue) = issue_slot.lock().unwrap().take() {
-                return Err(issue);
-            }
-            return Err(ConnectError::other(e));
-        }
-    };
-
-    let auth = match key_path.filter(|p| !p.trim().is_empty()) {
+async fn authenticate(session: &mut SshHandle, spec: &ConnectSpec) -> Result<(), ConnectError> {
+    let auth = match spec.key_path.as_deref().filter(|p| !p.trim().is_empty()) {
         Some(path) => {
             let key = russh::keys::load_secret_key(path.trim(), None)
                 .map_err(|e| ConnectError::other(format!("cannot load key: {e}")))?;
@@ -230,20 +213,89 @@ pub async fn open_shell(
                 .map_err(ConnectError::other)?
                 .flatten();
             session
-                .authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key), hash))
+                .authenticate_publickey(
+                    &spec.user,
+                    PrivateKeyWithHashAlg::new(Arc::new(key), hash),
+                )
                 .await
                 .map_err(ConnectError::other)?
         }
         None => session
-            .authenticate_password(user, password.unwrap_or_default())
+            .authenticate_password(&spec.user, spec.password.clone().unwrap_or_default())
             .await
             .map_err(ConnectError::other)?,
     };
     if !auth.success() {
-        return Err(ConnectError::other("Authentication failed"));
+        return Err(ConnectError::other(format!(
+            "Authentication failed for {}@{}",
+            spec.user, spec.host
+        )));
     }
+    Ok(())
+}
 
-    let channel = session
+/// Connect one hop: directly, or through a direct-tcpip channel of the
+/// previous hop.
+async fn connect_one(
+    spec: &ConnectSpec,
+    via: Option<&Arc<SshHandle>>,
+) -> Result<SshHandle, ConnectError> {
+    let config = Arc::new(client::Config::default());
+    let issue_slot = Arc::new(Mutex::new(None));
+    let handler = KnownHostsHandler {
+        host: spec.host.clone(),
+        port: spec.port,
+        issue: Arc::clone(&issue_slot),
+    };
+    let attempt = match via {
+        None => client::connect(config, (spec.host.as_str(), spec.port), handler).await,
+        Some(prev) => {
+            let channel = prev
+                .channel_open_direct_tcpip(
+                    spec.host.clone(),
+                    spec.port as u32,
+                    "127.0.0.1".to_string(),
+                    0,
+                )
+                .await
+                .map_err(|e| {
+                    ConnectError::other(format!(
+                        "jump tunnel to {}:{} failed: {e}",
+                        spec.host, spec.port
+                    ))
+                })?;
+            client::connect_stream(config, channel.into_stream(), handler).await
+        }
+    };
+    let mut session = match attempt {
+        Ok(session) => session,
+        Err(e) => {
+            if let Some(issue) = issue_slot.lock().unwrap().take() {
+                return Err(issue);
+            }
+            return Err(ConnectError::other(e));
+        }
+    };
+    authenticate(&mut session, spec).await?;
+    Ok(session)
+}
+
+/// Connect the whole chain and open an interactive shell on the final
+/// hop. Returns every hop's handle (jumps first) — they must stay
+/// alive as long as the session runs.
+pub async fn open_shell(
+    specs: &[ConnectSpec],
+) -> Result<(Vec<Arc<SshHandle>>, russh::Channel<client::Msg>), ConnectError> {
+    if specs.is_empty() {
+        return Err(ConnectError::other("empty connection chain"));
+    }
+    let mut chain: Vec<Arc<SshHandle>> = Vec::with_capacity(specs.len());
+    for spec in specs {
+        let session = connect_one(spec, chain.last()).await?;
+        chain.push(Arc::new(session));
+    }
+    let target = chain.last().expect("chain not empty");
+    let channel = target
         .channel_open_session()
         .await
         .map_err(ConnectError::other)?;
@@ -255,7 +307,7 @@ pub async fn open_shell(
         .request_shell(false)
         .await
         .map_err(ConnectError::other)?;
-    Ok((session, channel))
+    Ok((chain, channel))
 }
 
 /// Open a shell and wire up the session pump; shared by ad-hoc and
@@ -263,14 +315,10 @@ pub async fn open_shell(
 pub async fn start_session(
     app: AppHandle,
     sessions: &SshSessions,
-    host: &str,
-    port: u16,
-    user: &str,
-    password: Option<String>,
-    key_path: Option<String>,
+    specs: &[ConnectSpec],
 ) -> Result<u32, ConnectError> {
-    let (session, mut channel) = open_shell(host, port, user, password, key_path).await?;
-    let session = Arc::new(session);
+    let (chain, mut channel) = open_shell(specs).await?;
+    let target = Arc::clone(chain.last().expect("chain not empty"));
 
     let id = sessions.counter.fetch_add(1, Ordering::Relaxed) + 1;
     let (tx, mut rx) = mpsc::unbounded_channel::<TermCmd>();
@@ -280,7 +328,7 @@ pub async fn start_session(
         .handles
         .lock()
         .unwrap()
-        .insert(id, Arc::clone(&session));
+        .insert(id, Arc::clone(&target));
     let maps = Arc::clone(&sessions.maps);
 
     tauri::async_runtime::spawn(async move {
@@ -309,9 +357,12 @@ pub async fn start_session(
                 },
             }
         }
-        let _ = session
-            .disconnect(Disconnect::ByApplication, "", "en")
-            .await;
+        // polite hangup, target first, then the jumps in reverse
+        for handle in chain.iter().rev() {
+            let _ = handle
+                .disconnect(Disconnect::ByApplication, "", "en")
+                .await;
+        }
         maps.senders.lock().unwrap().remove(&id);
         maps.handles.lock().unwrap().remove(&id);
         maps.sftp.lock().unwrap().remove(&id);
@@ -325,13 +376,23 @@ pub async fn start_session(
 pub async fn ssh_connect(
     app: AppHandle,
     state: State<'_, SshSessions>,
+    lock: State<'_, crate::connections::StoreLock>,
     host: String,
     port: u16,
     user: String,
     password: Option<String>,
     key_path: Option<String>,
+    jump_id: Option<String>,
 ) -> Result<u32, ConnectError> {
-    start_session(app, &state, &host, port, &user, password, key_path).await
+    let target = ConnectSpec {
+        host,
+        port,
+        user,
+        password,
+        key_path,
+    };
+    let specs = crate::connections::resolve_chain(&lock, target, jump_id)?;
+    start_session(app, &state, &specs).await
 }
 
 fn send_cmd(state: &State<'_, SshSessions>, id: u32, cmd: TermCmd) -> Result<(), String> {

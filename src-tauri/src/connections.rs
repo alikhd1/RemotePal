@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-use crate::ssh::{self, ConnectError, SshSessions};
+use crate::ssh::{self, ConnectError, ConnectSpec, SshSessions};
 
 const KEYRING_SERVICE: &str = "RemotePal";
 
@@ -28,6 +28,9 @@ pub struct SavedConnection {
     pub key_path: String,
     #[serde(default)]
     pub has_password: bool,
+    /// id of another saved connection used as jump host ("" = direct)
+    #[serde(default)]
+    pub jump: String,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -117,6 +120,55 @@ pub fn connection_delete(lock: State<'_, StoreLock>, id: String) -> Result<(), S
     Ok(())
 }
 
+fn spec_from_saved(conn: &SavedConnection) -> Result<ConnectSpec, String> {
+    let password = if conn.has_password {
+        Some(
+            keyring::Entry::new(KEYRING_SERVICE, &conn.id)
+                .and_then(|e| e.get_password())
+                .map_err(|e| format!("cannot read stored password for {}: {e}", conn.name))?,
+        )
+    } else {
+        None
+    };
+    Ok(ConnectSpec {
+        host: conn.host.clone(),
+        port: conn.port,
+        user: conn.user.clone(),
+        password,
+        key_path: (!conn.key_path.is_empty()).then(|| conn.key_path.clone()),
+    })
+}
+
+/// Expand a target + optional jump-connection id into the full chain,
+/// outermost jump first. Follows nested jumps with cycle detection.
+pub fn resolve_chain(
+    lock: &State<'_, StoreLock>,
+    target: ConnectSpec,
+    jump_id: Option<String>,
+) -> Result<Vec<ConnectSpec>, String> {
+    let _guard = lock.0.lock().unwrap();
+    let list = load_all()?;
+    let mut specs = vec![target];
+    let mut next = jump_id.filter(|s| !s.is_empty());
+    let mut seen = std::collections::HashSet::new();
+    while let Some(id) = next {
+        if !seen.insert(id.clone()) {
+            return Err("jump host cycle detected".into());
+        }
+        if seen.len() > 5 {
+            return Err("jump chain too deep (max 5)".into());
+        }
+        let conn = list
+            .iter()
+            .find(|c| c.id == id)
+            .ok_or("jump connection not found")?;
+        specs.push(spec_from_saved(conn)?);
+        next = Some(conn.jump.clone()).filter(|s| !s.is_empty());
+    }
+    specs.reverse();
+    Ok(specs)
+}
+
 #[tauri::command]
 pub async fn ssh_connect_saved(
     app: AppHandle,
@@ -124,33 +176,16 @@ pub async fn ssh_connect_saved(
     lock: State<'_, StoreLock>,
     id: String,
 ) -> Result<u32, ConnectError> {
-    let conn = {
+    let (target, jump) = {
         let _guard = lock.0.lock().unwrap();
-        load_all()?
+        let conn = load_all()?
             .into_iter()
             .find(|c| c.id == id)
-            .ok_or_else(|| ConnectError::other("saved connection not found"))?
+            .ok_or_else(|| ConnectError::other("saved connection not found"))?;
+        (spec_from_saved(&conn)?, conn.jump)
     };
-    let password = if conn.has_password {
-        Some(
-            keyring::Entry::new(KEYRING_SERVICE, &conn.id)
-                .and_then(|e| e.get_password())
-                .map_err(|e| ConnectError::other(format!("cannot read stored password: {e}")))?,
-        )
-    } else {
-        None
-    };
-    let key_path = (!conn.key_path.is_empty()).then(|| conn.key_path.clone());
-    ssh::start_session(
-        app,
-        &sessions,
-        &conn.host,
-        conn.port,
-        &conn.user,
-        password,
-        key_path,
-    )
-    .await
+    let specs = resolve_chain(&lock, target, Some(jump))?;
+    ssh::start_session(app, &sessions, &specs).await
 }
 
 /// Tests that set REMOTEPAL_VAULT_DIR must hold this so parallel test

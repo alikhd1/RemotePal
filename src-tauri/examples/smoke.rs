@@ -1,18 +1,55 @@
 //! Headless smoke test for the SSH layer, run against the demo sshd from
 //! the PyQt repo: `cargo run --example smoke -- <port> <password>`.
 //!
-//! Exercises the trust-on-first-use flow end to end: with a fresh vault
-//! the first connect must fail with HostKeyUnknown; after trusting the
-//! key the retry must succeed, open a PTY shell, type "hello", and get
-//! the echo shell's "you typed: hello" back.
+//! Covers: trust-on-first-use (fresh vault must reject, trusting must
+//! fix), PTY echo, SFTP round-trip, a real local port forward, and a
+//! two-hop jump chain (through the demo server to itself).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use remotepal_lib::forwards::start_forward;
-use remotepal_lib::ssh::{open_shell, trust_host_key_inner, ConnectError};
+use remotepal_lib::ssh::{open_shell, trust_host_key_inner, ConnectError, ConnectSpec};
 use russh::ChannelMsg;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+fn spec(port: u16, password: &str) -> ConnectSpec {
+    ConnectSpec {
+        host: "127.0.0.1".into(),
+        port,
+        user: "demo".into(),
+        password: Some(password.into()),
+        key_path: None,
+    }
+}
+
+async fn expect_echo(
+    channel: &mut russh::Channel<russh::client::Msg>,
+    line: &str,
+) {
+    channel
+        .data(format!("{line}\r").as_bytes())
+        .await
+        .expect("write failed");
+    let want = format!("you typed: {line}");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut seen = String::new();
+    loop {
+        let msg = tokio::time::timeout_at(deadline, channel.wait())
+            .await
+            .unwrap_or_else(|_| panic!("timed out; saw only: {seen:?}"));
+        match msg {
+            Some(ChannelMsg::Data { ref data }) => {
+                seen.push_str(&String::from_utf8_lossy(&data[..]));
+                if seen.contains(&want) {
+                    return;
+                }
+            }
+            None => panic!("channel closed early; saw: {seen:?}"),
+            _ => {}
+        }
+    }
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -28,7 +65,7 @@ async fn main() {
     let _ = std::fs::remove_dir_all(&vault);
     std::env::set_var("REMOTEPAL_VAULT_DIR", &vault);
 
-    let first = open_shell("127.0.0.1", port, "demo", Some(password.clone()), None).await;
+    let first = open_shell(&[spec(port, &password)]).await;
     let (host, key_openssh) = match first {
         Err(ConnectError::HostKeyUnknown {
             host,
@@ -44,40 +81,22 @@ async fn main() {
     };
     trust_host_key_inner(&host, port, &key_openssh).expect("trust failed");
 
-    let (session, mut channel) =
-        open_shell("127.0.0.1", port, "demo", Some(password), None)
-            .await
-            .expect("connect after trust failed");
-    let session = Arc::new(session);
+    let (chain, mut channel) = open_shell(&[spec(port, &password)])
+        .await
+        .expect("connect after trust failed");
+    let session = chain.last().expect("chain not empty");
 
-    channel.data(&b"hello\r"[..]).await.expect("write failed");
-
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    let mut seen = String::new();
-    loop {
-        let msg = tokio::time::timeout_at(deadline, channel.wait())
-            .await
-            .unwrap_or_else(|_| panic!("timed out; saw only: {seen:?}"));
-        match msg {
-            Some(ChannelMsg::Data { ref data }) => {
-                seen.push_str(&String::from_utf8_lossy(&data[..]));
-                if seen.contains("you typed: hello") {
-                    break;
-                }
-            }
-            None => panic!("channel closed early; saw: {seen:?}"),
-            _ => {}
-        }
-    }
+    expect_echo(&mut channel, "hello").await;
+    println!("ECHO OK");
 
     // SFTP round-trip on a second channel of the same connection —
     // the same path the file browser uses.
-    let channel = session.channel_open_session().await.expect("sftp channel");
-    channel
+    let sftp_channel = session.channel_open_session().await.expect("sftp channel");
+    sftp_channel
         .request_subsystem(true, "sftp")
         .await
         .expect("sftp subsystem");
-    let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+    let sftp = russh_sftp::client::SftpSession::new(sftp_channel.into_stream())
         .await
         .expect("sftp session");
     let home = sftp.canonicalize(".").await.expect("canonicalize");
@@ -111,7 +130,7 @@ async fn main() {
     // Local port forward: tunnel back to the demo sshd itself and read
     // its SSH banner through the tunnel.
     let (fwd_port, _stop) = start_forward(
-        Arc::clone(&session),
+        Arc::clone(session),
         0,
         "127.0.0.1".to_string(),
         port,
@@ -129,9 +148,26 @@ async fn main() {
     assert_eq!(&banner, b"SSH-2.0", "unexpected banner: {banner:?}");
     println!("FORWARD OK: 127.0.0.1:{fwd_port}");
 
-    let _ = session
-        .disconnect(russh::Disconnect::ByApplication, "", "en")
-        .await;
+    // Jump chain: reach the demo server by hopping through itself —
+    // hop 2 runs over a direct-tcpip channel of hop 1.
+    let (jump_chain, mut jump_channel) =
+        open_shell(&[spec(port, &password), spec(port, &password)])
+            .await
+            .expect("jump connect failed");
+    assert_eq!(jump_chain.len(), 2, "expected two hops");
+    expect_echo(&mut jump_channel, "via-jump").await;
+    for handle in jump_chain.iter().rev() {
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+    }
+    println!("JUMP OK");
+
+    for handle in chain.iter().rev() {
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+    }
     let _ = std::fs::remove_dir_all(&vault);
     println!("SMOKE OK");
 }

@@ -220,6 +220,16 @@ body,
   border-color: var(--accent);
 }
 
+.connect-form select {
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
 .field-row {
   display: flex;
   gap: 10px;
