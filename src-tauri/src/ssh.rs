@@ -66,6 +66,7 @@ pub struct ConnectSpec {
     pub user: String,
     pub password: Option<String>,
     pub key_path: Option<String>,
+    pub agent_forward: bool,
 }
 
 pub enum TermCmd {
@@ -107,6 +108,7 @@ fn known_hosts_file() -> Result<PathBuf, String> {
 pub struct KnownHostsHandler {
     host: String,
     port: u16,
+    agent_forward: bool,
     issue: Arc<Mutex<Option<ConnectError>>>,
 }
 
@@ -164,6 +166,46 @@ impl client::Handler for KnownHostsHandler {
                 });
                 Ok(false)
             }
+        }
+    }
+
+    /// Server-opened agent channels are piped to the local OpenSSH
+    /// agent's named pipe — only when this hop asked for forwarding.
+    fn server_channel_open_agent_forward(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut russh::client::Session,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
+        let allow = self.agent_forward;
+        async move {
+            if !allow {
+                drop(reply); // dropping rejects the open
+                return Ok(());
+            }
+            reply.accept().await;
+            tauri::async_runtime::spawn(async move {
+                #[cfg(windows)]
+                {
+                    let pipe = tokio::net::windows::named_pipe::ClientOptions::new()
+                        .open(r"\\.\pipe\openssh-ssh-agent");
+                    if let Ok(mut pipe) = pipe {
+                        let mut stream = channel.into_stream();
+                        let _ = tokio::io::copy_bidirectional(&mut stream, &mut pipe).await;
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    if let Ok(path) = std::env::var("SSH_AUTH_SOCK") {
+                        if let Ok(mut sock) = tokio::net::UnixStream::connect(path).await {
+                            let mut stream = channel.into_stream();
+                            let _ =
+                                tokio::io::copy_bidirectional(&mut stream, &mut sock).await;
+                        }
+                    }
+                }
+            });
+            Ok(())
         }
     }
 }
@@ -249,6 +291,7 @@ async fn connect_one(
     let handler = KnownHostsHandler {
         host: spec.host.clone(),
         port: spec.port,
+        agent_forward: spec.agent_forward,
         issue: Arc::clone(&issue_slot),
     };
     let attempt = match via {
@@ -337,6 +380,9 @@ pub async fn open_shell(
         .channel_open_session()
         .await
         .map_err(ConnectError::other)?;
+    if specs.last().is_some_and(|s| s.agent_forward) {
+        let _ = channel.agent_forward(false).await;
+    }
     channel
         .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
         .await
@@ -427,6 +473,7 @@ pub async fn ssh_connect(
     password: Option<String>,
     key_path: Option<String>,
     jump_id: Option<String>,
+    agent_forward: Option<bool>,
 ) -> Result<u32, ConnectError> {
     let target = ConnectSpec {
         host,
@@ -434,6 +481,7 @@ pub async fn ssh_connect(
         user,
         password,
         key_path,
+        agent_forward: agent_forward.unwrap_or(false),
     };
     let specs = crate::connections::resolve_chain(&lock, target, jump_id)?;
     start_session(app, &state, &specs).await

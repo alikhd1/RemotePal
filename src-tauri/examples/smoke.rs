@@ -20,6 +20,7 @@ fn spec(port: u16, password: &str) -> ConnectSpec {
         user: "demo".into(),
         password: Some(password.into()),
         key_path: None,
+        agent_forward: false,
     }
 }
 

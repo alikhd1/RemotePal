@@ -45,6 +45,9 @@ pub struct SavedConnection {
     /// sidebar group ("" = ungrouped)
     #[serde(default)]
     pub group: String,
+    /// let the remote host use the local SSH agent's keys
+    #[serde(default)]
+    pub agent_forward: bool,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -152,6 +155,7 @@ fn spec_from_saved(conn: &SavedConnection) -> Result<ConnectSpec, String> {
         user: conn.user.clone(),
         password,
         key_path: (!conn.key_path.is_empty()).then(|| conn.key_path.clone()),
+        agent_forward: conn.agent_forward,
     })
 }
 
@@ -317,6 +321,7 @@ mod tests {
             jump: String::new(),
             forwards: Vec::new(),
             group: String::new(),
+            agent_forward: false,
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();

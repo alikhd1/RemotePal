@@ -17,6 +17,7 @@ export interface SavedConnection {
   hasPassword: boolean;
   jump: string;
   group: string;
+  agentForward: boolean;
 }
 
 export interface HostKeyIssue {
@@ -85,6 +86,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
   const [keyPath, setKeyPath] = useState("");
   const [jump, setJump] = useState("");
   const [group, setGroup] = useState("");
+  const [agentForward, setAgentForward] = useState(false);
   const [save, setSave] = useState(false);
   const [remember, setRemember] = useState(false);
 
@@ -199,6 +201,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
           hasPassword: false,
           jump: c.jump,
           group: c.group,
+          agentForward: c.agentForward,
         },
         password: "", // Some("") clears the stored password
       });
@@ -274,6 +277,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setKeyPath(c.keyPath);
     setJump(c.jump || "");
     setGroup(c.group || "");
+    setAgentForward(c.agentForward || false);
     setPassword("");
     setSave(true);
     setRemember(false);
@@ -289,6 +293,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setKeyPath("");
     setJump("");
     setGroup("");
+    setAgentForward(false);
     setSave(false);
     setRemember(false);
   }
@@ -315,6 +320,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
             hasPassword: false,
             jump,
             group,
+            agentForward,
           },
           // Some(pw) stores, Some("") clears, null leaves untouched
           password: remember ? password : null,
@@ -329,6 +335,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
         password: password || null,
         keyPath: keyPath || null,
         jumpId: jump || null,
+        agentForward,
       });
       onConnected(id, title, {
         host,
@@ -520,6 +527,14 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
               </select>
             </label>
           )}
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={agentForward}
+              onChange={(e) => setAgentForward(e.currentTarget.checked)}
+            />
+            Agent forwarding (remote host may use your local SSH agent)
+          </label>
           <label className="check">
             <input
               type="checkbox"
