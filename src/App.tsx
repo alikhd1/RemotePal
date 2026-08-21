@@ -2,6 +2,7 @@ import { useState } from "react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
+import type { SessionMeta } from "./SnippetsPanel";
 import { THEME_NAMES, applyTheme, currentTheme, initTheme } from "./themes";
 import "./App.css";
 
@@ -13,6 +14,7 @@ type Tab =
       key: string;
       sshId: number;
       title: string;
+      meta: SessionMeta;
       disconnected: boolean;
     }
   | { kind: "s3"; key: string; storageId: string; title: string };
@@ -25,15 +27,16 @@ function App() {
   const [active, setActive] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
   const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
+  const [snippetsOpen, setSnippetsOpen] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(currentTheme());
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
 
-  function addSshTab(sshId: number, title: string) {
+  function addSshTab(sshId: number, title: string, meta: SessionMeta) {
     const key = `ssh-${sshId}`;
     setTabs((prev) => [
       ...prev,
-      { kind: "ssh", key, sshId, title, disconnected: false },
+      { kind: "ssh", key, sshId, title, meta, disconnected: false },
     ]);
     setActive(key);
   }
@@ -119,6 +122,16 @@ function App() {
               <button
                 className={
                   "files-toggle" +
+                  (snippetsOpen.has(activeTab.key) ? " active" : "")
+                }
+                title="Toggle snippets"
+                onClick={() => toggleIn(setSnippetsOpen, activeTab.key)}
+              >
+                Snippets
+              </button>
+              <button
+                className={
+                  "files-toggle" +
                   (forwardsOpen.has(activeTab.key) ? " active" : "")
                 }
                 title="Toggle port forwards"
@@ -168,6 +181,8 @@ function App() {
                 active={active === t.key}
                 showFiles={filesOpen.has(t.key)}
                 showForwards={forwardsOpen.has(t.key)}
+                showSnippets={snippetsOpen.has(t.key)}
+                meta={t.meta}
                 onClose={() => closeTab(t.key)}
                 onDisconnected={() => markDisconnected(t.key)}
               />

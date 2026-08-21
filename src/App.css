@@ -629,6 +629,117 @@ body,
   cursor: pointer;
 }
 
+/* -------------------------------------------------------- snippets */
+
+.snippets-add {
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.snippet-desc {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.snippet-desc strong {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.snippet-cmd {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snippet-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.snippet-edit input,
+.snippet-edit textarea {
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.snippet-edit textarea {
+  font-family: Consolas, monospace;
+  resize: vertical;
+}
+
+.snippet-edit input:focus,
+.snippet-edit textarea:focus {
+  border-color: var(--accent);
+}
+
+.snippet-var {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.snippet-var input {
+  flex: 1;
+}
+
+/* ----------------------------------------------------------- vault */
+
+.vault-pass {
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.vault-pass:focus {
+  border-color: var(--accent);
+}
+
+.vault-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.vault-buttons button {
+  flex: 1;
+  padding: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.vault-buttons button:hover {
+  border-color: var(--accent);
+}
+
+.vault-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---------------------------------------------------- file browser */
 
 .files-panel {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import S3Storages from "./S3Storages";
+import VaultCard from "./VaultCard";
+import type { SessionMeta } from "./SnippetsPanel";
 
 export interface SavedConnection {
   id: string;
@@ -41,11 +43,12 @@ function errMessage(err: unknown): string {
 }
 
 interface Props {
-  onConnected: (id: number, title: string) => void;
+  onConnected: (id: number, title: string, meta: SessionMeta) => void;
   onOpenS3: (storageId: string, title: string) => void;
 }
 
 function ConnectForm({ onConnected, onOpenS3 }: Props) {
+  const [importBump, setImportBump] = useState(0);
   const [saved, setSaved] = useState<SavedConnection[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -85,7 +88,12 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     setError(null);
     try {
       const id = await invoke<number>("ssh_connect_saved", { id: c.id });
-      onConnected(id, c.name || `${c.user}@${c.host}`);
+      onConnected(id, c.name || `${c.user}@${c.host}`, {
+        host: c.host,
+        user: c.user,
+        port: c.port,
+        name: c.name || `${c.user}@${c.host}`,
+      });
     } catch (err) {
       const issue = asHostKeyIssue(err);
       if (issue) {
@@ -192,7 +200,12 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
         keyPath: keyPath || null,
         jumpId: jump || null,
       });
-      onConnected(id, title);
+      onConnected(id, title, {
+        host,
+        user,
+        port: parseInt(port, 10) || 22,
+        name: title,
+      });
     } catch (err) {
       const issue = asHostKeyIssue(err);
       if (issue) {
@@ -263,7 +276,13 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
             ))}
           </ul>
         </div>
-        <S3Storages onOpen={onOpenS3} />
+        <S3Storages key={importBump} onOpen={onOpenS3} />
+        <VaultCard
+          onImported={() => {
+            refresh();
+            setImportBump((n) => n + 1);
+          }}
+        />
         </div>
 
         <form className="connect-form" onSubmit={connect}>

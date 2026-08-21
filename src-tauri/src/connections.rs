@@ -12,7 +12,7 @@ use tauri::{AppHandle, State};
 
 use crate::ssh::{self, ConnectError, ConnectSpec, SshSessions};
 
-const KEYRING_SERVICE: &str = "RemotePal";
+pub(crate) const KEYRING_SERVICE: &str = "RemotePal";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +50,7 @@ fn store_path() -> Result<PathBuf, String> {
     Ok(vault_dir()?.join("connections.json"))
 }
 
-fn load_all() -> Result<Vec<SavedConnection>, String> {
+pub fn load_all() -> Result<Vec<SavedConnection>, String> {
     let path = store_path()?;
     if !path.exists() {
         return Ok(Vec::new());
@@ -59,7 +59,7 @@ fn load_all() -> Result<Vec<SavedConnection>, String> {
     serde_json::from_str(&text).map_err(|e| format!("corrupt connections.json: {e}"))
 }
 
-fn save_all(list: &[SavedConnection]) -> Result<(), String> {
+pub(crate) fn save_all(list: &[SavedConnection]) -> Result<(), String> {
     fs::create_dir_all(vault_dir()?).map_err(|e| e.to_string())?;
     let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
     fs::write(store_path()?, text).map_err(|e| e.to_string())

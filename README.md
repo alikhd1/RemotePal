@@ -36,8 +36,15 @@ Early. Working so far:
 - Push folder sync (missing/changed files, optional mirror deletes)
 - Themes: One Dark, Light, Solarized Dark, Nord — applied live to the app
   and all open terminals, persisted across restarts
+- Snippets: shared snippets.json with the PyQt app; per-session panel,
+  {host} {user} {port} {name} fill in automatically, other {placeholders}
+  prompt on send, multi-line commands run line by line
+- Encrypted vault backups, byte-compatible with the PyQt app
+  (RPAL1: PBKDF2-SHA256/600k + Fernet over tar.gz): export/import
+  connections, S3 storages, snippets, bundled keys, and stored secrets;
+  backups made by either app restore in the other
 
-Not yet ported from the PyQt app: vault encryption/backup, snippets.
+Feature parity with the PyQt app is complete.
 
 ## Development
 

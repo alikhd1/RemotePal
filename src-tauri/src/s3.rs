@@ -16,7 +16,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::connections::vault_dir;
 
-const KEYRING_SERVICE: &str = "RemotePal-S3";
+pub(crate) const KEYRING_SERVICE: &str = "RemotePal-S3";
 const PROGRESS_STEP: u64 = 256 * 1024;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -43,7 +43,7 @@ fn store_path() -> Result<std::path::PathBuf, String> {
     Ok(vault_dir()?.join("s3.json"))
 }
 
-fn load_all() -> Result<Vec<S3Storage>, String> {
+pub(crate) fn load_all() -> Result<Vec<S3Storage>, String> {
     let path = store_path()?;
     if !path.exists() {
         return Ok(Vec::new());
@@ -52,7 +52,7 @@ fn load_all() -> Result<Vec<S3Storage>, String> {
     serde_json::from_str(&text).map_err(|e| format!("corrupt s3.json: {e}"))
 }
 
-fn save_all(list: &[S3Storage]) -> Result<(), String> {
+pub(crate) fn save_all(list: &[S3Storage]) -> Result<(), String> {
     std::fs::create_dir_all(vault_dir()?).map_err(|e| e.to_string())?;
     let text = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
     std::fs::write(store_path()?, text).map_err(|e| e.to_string())

@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
+import SnippetsPanel, { type SessionMeta } from "./SnippetsPanel";
 import { getTermTheme, subscribeTheme } from "./themes";
 import "@xterm/xterm/css/xterm.css";
 
@@ -20,6 +21,8 @@ interface Props {
   active: boolean;
   showFiles: boolean;
   showForwards: boolean;
+  showSnippets: boolean;
+  meta: SessionMeta;
   onClose: () => void;
   onDisconnected: () => void;
 }
@@ -29,6 +32,8 @@ function TerminalPane({
   active,
   showFiles,
   showForwards,
+  showSnippets,
+  meta,
   onClose,
   onDisconnected,
 }: Props) {
@@ -126,6 +131,7 @@ function TerminalPane({
           <button onClick={onClose}>Close tab</button>
         </div>
       )}
+      {showSnippets && <SnippetsPanel sessionId={id} meta={meta} />}
       {showForwards && <ForwardsPanel sessionId={id} />}
       <div className="term-row">
         <div ref={containerRef} className="term-container" />

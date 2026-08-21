@@ -3,6 +3,7 @@ pub mod forwards;
 pub mod s3;
 pub mod sftp;
 pub mod ssh;
+pub mod vault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,6 +45,10 @@ pub fn run() {
             forwards::forward_start,
             forwards::forward_stop,
             forwards::forwards_list,
+            vault::snippets_list,
+            vault::snippets_save,
+            vault::vault_export,
+            vault::vault_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
