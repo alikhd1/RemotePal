@@ -3,7 +3,6 @@
 //! wrap the local file in counting reader/writer adapters that emit
 //! `s3-progress` events ({ transferId, done, total }).
 
-use std::collections::HashMap;
 use std::io;
 use std::pin::Pin;
 use std::sync::Mutex;
