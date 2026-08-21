@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import S3Storages from "./S3Storages";
 import VaultCard from "./VaultCard";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
@@ -60,6 +61,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [hostKeyPrompt, setHostKeyPrompt] = useState<{
     issue: HostKeyIssue;
     retry: () => void;
@@ -100,6 +102,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     if (busyId) return;
     setBusyId(c.id);
     setError(null);
+    setNotice(null);
     try {
       const id = await invoke<number>("ssh_connect_saved", { id: c.id });
       onConnected(
@@ -142,6 +145,38 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
     retry();
   }
 
+  async function deployKey(c: SavedConnection) {
+    const pub = await openDialog({
+      multiple: false,
+      title: `Deploy which public key to ${c.name || c.host}?`,
+      defaultPath: c.keyPath ? `${c.keyPath}.pub` : undefined,
+      filters: [{ name: "OpenSSH public key", extensions: ["pub"] }],
+    });
+    if (typeof pub !== "string") return;
+    doDeploy(c, pub);
+  }
+
+  async function doDeploy(c: SavedConnection, pubKeyPath: string) {
+    setBusyId(c.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await invoke("deploy_key", { id: c.id, pubKeyPath });
+      setNotice(
+        `Public key deployed to ${c.name || c.host} — key auth should work now.`,
+      );
+    } catch (err) {
+      const issue = asHostKeyIssue(err);
+      if (issue) {
+        setHostKeyPrompt({ issue, retry: () => doDeploy(c, pubKeyPath) });
+      } else {
+        setError(`${c.name}: ${errMessage(err)}`);
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function forgetPassword(c: SavedConnection) {
     setError(null);
     try {
@@ -172,6 +207,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
         onClick: () => connectSaved(c, { openFiles: true }),
       },
     ];
+    items.push({ label: "Deploy public key…", onClick: () => deployKey(c) });
     if (c.hasPassword) {
       items.push({
         label: "Forget saved password",
@@ -472,6 +508,7 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
             {connecting ? "Connecting…" : "Connect"}
           </button>
           {error && <div className="connect-error">{error}</div>}
+          {notice && <div className="connect-notice">{notice}</div>}
         </form>
       </div>
 

@@ -25,6 +25,7 @@ pub fn run() {
             connections::connection_save,
             connections::connection_delete,
             connections::ssh_connect_saved,
+            connections::deploy_key,
             sftp::sftp_home,
             sftp::sftp_list,
             sftp::sftp_mkdir,

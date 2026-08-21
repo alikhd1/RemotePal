@@ -188,6 +188,72 @@ pub async fn ssh_connect_saved(
     ssh::start_session(app, &sessions, &specs).await
 }
 
+/// ssh-copy-id: append a public key to the server's authorized_keys.
+/// Useful when the server only accepts password auth so far — after
+/// deploying, key auth works. Idempotent (grep before append), same
+/// shell command the PyQt app uses.
+#[tauri::command]
+pub async fn deploy_key(
+    lock: State<'_, StoreLock>,
+    id: String,
+    pub_key_path: String,
+) -> Result<(), ConnectError> {
+    let text = std::fs::read_to_string(pub_key_path.trim())
+        .map_err(|e| ConnectError::other(format!("cannot read public key: {e}")))?;
+    let pub_key = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_string();
+    let looks_like_pubkey = pub_key.starts_with("ssh-")
+        || pub_key.starts_with("ecdsa-")
+        || pub_key.starts_with("sk-");
+    if !looks_like_pubkey {
+        return Err(ConnectError::other(
+            "that file does not look like an OpenSSH public key (.pub)",
+        ));
+    }
+
+    let (target, jump) = {
+        let _guard = lock.0.lock().unwrap();
+        let conn = load_all()?
+            .into_iter()
+            .find(|c| c.id == id)
+            .ok_or_else(|| ConnectError::other("saved connection not found"))?;
+        (spec_from_saved(&conn)?, conn.jump)
+    };
+    let specs = resolve_chain(&lock, target, Some(jump))?;
+    let chain = ssh::connect_chain(&specs).await?;
+    let session = chain.last().expect("chain not empty");
+
+    let quoted = pub_key.replace('\'', "'\\''");
+    let command = format!(
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
+         touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && \
+         (grep -qxF '{quoted}' ~/.ssh/authorized_keys || \
+         echo '{quoted}' >> ~/.ssh/authorized_keys)"
+    );
+    let result = ssh::exec_on(session, &command).await;
+    for handle in chain.iter().rev() {
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+    }
+    let (status, stderr) = result.map_err(ConnectError::other)?;
+    if status != 0 {
+        return Err(ConnectError::other(format!(
+            "deploy failed (exit {status}){}",
+            if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            }
+        )));
+    }
+    Ok(())
+}
+
 /// Tests that set REMOTEPAL_VAULT_DIR must hold this so parallel test
 /// threads don't race on the process-wide env var.
 #[cfg(test)]

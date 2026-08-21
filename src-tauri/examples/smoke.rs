@@ -148,6 +148,14 @@ async fn main() {
     assert_eq!(&banner, b"SSH-2.0", "unexpected banner: {banner:?}");
     println!("FORWARD OK: 127.0.0.1:{fwd_port}");
 
+    // Exec channel (the deploy-key transport): the demo server replies
+    // "ok" and exit status 0 to any exec request.
+    let (status, stderr) = remotepal_lib::ssh::exec_on(session, "echo remotepal")
+        .await
+        .expect("exec failed");
+    assert_eq!(status, 0, "exec exit status; stderr: {stderr}");
+    println!("EXEC OK");
+
     // Jump chain: reach the demo server by hopping through itself —
     // hop 2 runs over a direct-tcpip channel of hop 1.
     let (jump_chain, mut jump_channel) =

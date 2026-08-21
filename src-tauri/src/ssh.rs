@@ -280,12 +280,9 @@ async fn connect_one(
     Ok(session)
 }
 
-/// Connect the whole chain and open an interactive shell on the final
-/// hop. Returns every hop's handle (jumps first) — they must stay
-/// alive as long as the session runs.
-pub async fn open_shell(
-    specs: &[ConnectSpec],
-) -> Result<(Vec<Arc<SshHandle>>, russh::Channel<client::Msg>), ConnectError> {
+/// Connect every hop (jumps first). The returned handles must stay
+/// alive as long as anything runs over the final one.
+pub async fn connect_chain(specs: &[ConnectSpec]) -> Result<Vec<Arc<SshHandle>>, ConnectError> {
     if specs.is_empty() {
         return Err(ConnectError::other("empty connection chain"));
     }
@@ -294,6 +291,43 @@ pub async fn open_shell(
         let session = connect_one(spec, chain.last()).await?;
         chain.push(Arc::new(session));
     }
+    Ok(chain)
+}
+
+/// Run one command on a session, returning (exit status, stderr).
+pub async fn exec_on(handle: &SshHandle, command: &str) -> Result<(u32, String), String> {
+    let mut channel = handle
+        .channel_open_session()
+        .await
+        .map_err(|e| e.to_string())?;
+    channel.exec(true, command).await.map_err(|e| e.to_string())?;
+    let mut stderr = String::new();
+    let mut status: Option<u32> = None;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let msg = tokio::time::timeout_at(deadline, channel.wait())
+            .await
+            .map_err(|_| "remote command timed out".to_string())?;
+        match msg {
+            Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                stderr.push_str(&String::from_utf8_lossy(&data[..]));
+            }
+            Some(ChannelMsg::ExitStatus { exit_status }) => status = Some(exit_status),
+            Some(ChannelMsg::Close) if status.is_some() => break,
+            None => break,
+            _ => {}
+        }
+    }
+    Ok((status.unwrap_or(255), stderr.trim().to_string()))
+}
+
+/// Connect the whole chain and open an interactive shell on the final
+/// hop. Returns every hop's handle (jumps first) — they must stay
+/// alive as long as the session runs.
+pub async fn open_shell(
+    specs: &[ConnectSpec],
+) -> Result<(Vec<Arc<SshHandle>>, russh::Channel<client::Msg>), ConnectError> {
+    let chain = connect_chain(specs).await?;
     let target = chain.last().expect("chain not empty");
     let channel = target
         .channel_open_session()
