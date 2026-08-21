@@ -1273,13 +1273,20 @@ body,
 
 .files-toggle {
   align-self: center;
-  padding: 3px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
   font-size: 12px;
   color: var(--fg-dim);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 5px;
   cursor: pointer;
+}
+
+.files-toggle.icon-only {
+  padding: 4px 7px;
 }
 
 .files-toggle:hover {
@@ -2250,6 +2257,9 @@ body,
 .ai-save-snippet {
   margin-left: 8px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   color: var(--accent);
   background: none;
@@ -2336,6 +2346,15 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* icon + label action buttons inside the AI panel */
+.ai-approval-btns button,
+.ai-input-actions button,
+.ai-error-box .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .ai-notice {

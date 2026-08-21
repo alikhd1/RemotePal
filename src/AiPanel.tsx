@@ -20,7 +20,15 @@ import {
   providerDef,
 } from "./aiConfig";
 import { Select } from "./Dropdown";
-import { Sparkles } from "lucide-react";
+import {
+  Bookmark,
+  Check,
+  RotateCw,
+  SendHorizontal,
+  Sparkles,
+  Square,
+  X,
+} from "lucide-react";
 import Markdown from "./Markdown";
 
 // Anthropic content blocks, stored verbatim.
@@ -486,9 +494,11 @@ function AiPanel({ sessionId, allSessions }: Props) {
             <pre className="ai-cmd">{c.command}</pre>
             <div className="ai-approval-btns">
               <button className="accent-btn" onClick={() => approve(c)}>
+                <Check size={13} />
                 Approve
               </button>
               <button className="link-btn" onClick={() => deny(c)}>
+                <X size={13} />
                 Deny
               </button>
             </div>
@@ -522,9 +532,11 @@ function AiPanel({ sessionId, allSessions }: Props) {
                 onClick={saveSnippet}
                 disabled={!snippetFor.name.trim()}
               >
+                <Bookmark size={13} />
                 Save
               </button>
               <button className="link-btn" onClick={() => setSnippetFor(null)}>
+                <X size={13} />
                 Cancel
               </button>
             </div>
@@ -544,6 +556,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
                   runTurn();
                 }}
               >
+                <RotateCw size={12} />
                 Retry
               </button>
             )}
@@ -594,7 +607,8 @@ function AiPanel({ sessionId, allSessions }: Props) {
             output
           </label>
           {busy ? (
-            <button className="link-btn" onClick={stop}>
+            <button className="link-btn" onClick={stop} title="Stop">
+              <Square size={13} />
               Stop
             </button>
           ) : (
@@ -602,7 +616,9 @@ function AiPanel({ sessionId, allSessions }: Props) {
               className="accent-btn"
               onClick={send}
               disabled={status === "awaiting_approval" || !input.trim()}
+              title="Send (Enter)"
             >
+              <SendHorizontal size={13} />
               Send
             </button>
           )}
@@ -684,6 +700,7 @@ function MessageView({
                     title="Save as snippet"
                     onClick={() => onSaveCommand(command)}
                   >
+                    <Bookmark size={11} />
                     save
                   </button>
                 )}

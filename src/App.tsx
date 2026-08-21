@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, Cloud, Plus, SquareTerminal, X } from "lucide-react";
+import {
+  Bot,
+  Cloud,
+  Columns2,
+  FolderClosed,
+  Network,
+  Plus,
+  Rows2,
+  ScrollText,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
@@ -269,18 +280,18 @@ function App() {
           {activeTab?.kind === "ssh" && activePaneId && (
             <>
               <button
-                className="files-toggle"
+                className="files-toggle icon-only"
                 title="Split right (Ctrl+Shift+D)"
                 onClick={() => splitPane(activeTab.key, activePaneId, "row")}
               >
-                Split →
+                <Columns2 size={15} />
               </button>
               <button
-                className="files-toggle"
+                className="files-toggle icon-only"
                 title="Split down (Ctrl+Shift+E)"
                 onClick={() => splitPane(activeTab.key, activePaneId, "column")}
               >
-                Split ↓
+                <Rows2 size={15} />
               </button>
               <button
                 className={
@@ -290,6 +301,7 @@ function App() {
                 title="Toggle snippets"
                 onClick={() => toggleIn(setSnippetsOpen, activePaneId)}
               >
+                <ScrollText size={15} />
                 Snippets
               </button>
               <button
@@ -300,6 +312,7 @@ function App() {
                 title="Toggle port forwards"
                 onClick={() => toggleIn(setForwardsOpen, activePaneId)}
               >
+                <Network size={15} />
                 Forwards
               </button>
               <button
@@ -309,6 +322,7 @@ function App() {
                 title="Toggle file browser"
                 onClick={() => toggleIn(setFilesOpen, activePaneId)}
               >
+                <FolderClosed size={15} />
                 Files
               </button>
               <button
