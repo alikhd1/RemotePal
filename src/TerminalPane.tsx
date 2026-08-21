@@ -25,12 +25,16 @@ function base64ToBytes(b64: string): Uint8Array {
 interface Props {
   id: number;
   active: boolean;
+  /** this pane is its tab's focused pane (keyboard target) */
+  focused: boolean;
   showFiles: boolean;
   showForwards: boolean;
   showSnippets: boolean;
   meta: SessionMeta;
   savedConnId?: string;
   allSessions: LiveSession[];
+  onFocus: () => void;
+  onSplit: (dir: "row" | "column") => void;
   onClose: () => void;
   onDisconnected: () => void;
   onReconnected: (newId: number) => void;
@@ -39,12 +43,15 @@ interface Props {
 function TerminalPane({
   id,
   active,
+  focused,
   showFiles,
   showForwards,
   showSnippets,
   meta,
   savedConnId,
   allSessions,
+  onFocus,
+  onSplit,
   onClose,
   onDisconnected,
   onReconnected,
@@ -61,6 +68,10 @@ function TerminalPane({
   // keep the session-lifetime effect independent of callback identity
   const onDisconnectedRef = useRef(onDisconnected);
   onDisconnectedRef.current = onDisconnected;
+  const onSplitRef = useRef(onSplit);
+  onSplitRef.current = onSplit;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [disconnected, setDisconnected] = useState(false);
 
   useEffect(() => {
@@ -95,12 +106,23 @@ function TerminalPane({
     fit.fit();
     term.focus();
 
-    // Ctrl+F opens search instead of reaching the shell
+    // Ctrl+F opens search instead of reaching the shell;
+    // Ctrl+Shift+D/E split the pane, Ctrl+Shift+W closes it
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && e.ctrlKey && !e.shiftKey && e.key === "f") {
         setSearchOpen(true);
         setTimeout(() => searchInputRef.current?.select(), 0);
         return false;
+      }
+      if (e.type === "keydown" && e.ctrlKey && e.shiftKey) {
+        const key = e.key.toLowerCase();
+        if (key === "d" || key === "e" || key === "w") {
+          e.preventDefault();
+          if (key === "d") onSplitRef.current("row");
+          else if (key === "e") onSplitRef.current("column");
+          else onCloseRef.current();
+          return false;
+        }
       }
       return true;
     });
@@ -164,8 +186,8 @@ function TerminalPane({
     if (el && el.clientWidth > 0 && el.clientHeight > 0) {
       fitRef.current?.fit();
     }
-    termRef.current?.focus();
-  }, [active]);
+    if (focused) termRef.current?.focus();
+  }, [active, focused]);
 
   useEffect(() => {
     return subscribeTheme(() => {
@@ -199,7 +221,10 @@ function TerminalPane({
   }
 
   return (
-    <div className="term-pane">
+    <div
+      className={"term-pane" + (focused ? " focused" : "")}
+      onMouseDownCapture={onFocus}
+    >
       {disconnected && (
         <div className="term-banner">
           <span>
@@ -209,7 +234,7 @@ function TerminalPane({
           <button onClick={reconnect} disabled={reconnecting}>
             {reconnecting ? "Reconnecting…" : "Reconnect"}
           </button>
-          <button onClick={onClose}>Close tab</button>
+          <button onClick={onClose}>Close pane</button>
         </div>
       )}
       {searchOpen && (

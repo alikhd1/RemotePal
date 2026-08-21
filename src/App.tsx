@@ -1,7 +1,20 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
+import SplitLayout from "./SplitLayout";
+import {
+  findPane,
+  leaves,
+  removeLeaf,
+  setRatioAt,
+  splitLeaf,
+  updatePane,
+  type PaneNode,
+  type SplitDir,
+  type SshPane,
+} from "./splitTree";
 import type { SessionMeta } from "./SnippetsPanel";
 import { THEME_NAMES, applyTheme, currentTheme, initTheme } from "./themes";
 import "./App.css";
@@ -12,36 +25,49 @@ type Tab =
   | {
       kind: "ssh";
       key: string;
-      sshId: number;
       title: string;
-      meta: SessionMeta;
-      savedId?: string;
-      disconnected: boolean;
+      root: PaneNode;
+      activePaneId: string;
     }
   | { kind: "s3"; key: string; storageId: string; title: string };
 
-let nextS3TabSeq = 1;
+let nextTabSeq = 1;
+let nextPaneSeq = 1;
 
 function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   // active tab key; null shows the connect view ("+" tab)
   const [active, setActive] = useState<string | null>(null);
+  // panel visibility, keyed by paneId (stable across reconnects)
   const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
   const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
   const [snippetsOpen, setSnippetsOpen] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(currentTheme());
+  const [splitError, setSplitError] = useState<string | null>(null);
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
   const liveSessions = tabs.flatMap((t) =>
-    t.kind === "ssh" && !t.disconnected
-      ? [{ id: t.sshId, meta: t.meta }]
+    t.kind === "ssh"
+      ? leaves(t.root)
+          .filter((p) => !p.disconnected)
+          .map((p) => ({ id: p.sshId, meta: p.meta }))
       : [],
   );
   const activeSavedIds = new Set(
     tabs.flatMap((t) =>
-      t.kind === "ssh" && !t.disconnected && t.savedId ? [t.savedId] : [],
+      t.kind === "ssh"
+        ? leaves(t.root).flatMap((p) =>
+            !p.disconnected && p.savedId ? [p.savedId] : [],
+          )
+        : [],
     ),
   );
+
+  function patchSshTab(key: string, fn: (t: Tab & { kind: "ssh" }) => Tab) {
+    setTabs((prev) =>
+      prev.map((t) => (t.key === key && t.kind === "ssh" ? fn(t) : t)),
+    );
+  }
 
   function addSshTab(
     sshId: number,
@@ -49,72 +75,121 @@ function App() {
     meta: SessionMeta,
     opts?: { openFiles?: boolean; savedId?: string },
   ) {
-    const key = `ssh-${sshId}`;
+    const key = `tab-${nextTabSeq++}`;
+    const pane: SshPane = {
+      paneId: `pane-${nextPaneSeq++}`,
+      sshId,
+      meta,
+      savedId: opts?.savedId,
+      disconnected: false,
+    };
     setTabs((prev) => [
       ...prev,
-      {
-        kind: "ssh",
-        key,
-        sshId,
-        title,
-        meta,
-        savedId: opts?.savedId,
-        disconnected: false,
-      },
+      { kind: "ssh", key, title, root: { type: "leaf", pane }, activePaneId: pane.paneId },
     ]);
     if (opts?.openFiles) {
-      setFilesOpen((prev) => new Set(prev).add(key));
+      setFilesOpen((prev) => new Set(prev).add(pane.paneId));
     }
     setActive(key);
   }
 
   function addS3Tab(storageId: string, title: string) {
-    const key = `s3-${nextS3TabSeq++}`;
+    const key = `tab-${nextTabSeq++}`;
     setTabs((prev) => [...prev, { kind: "s3", key, storageId, title }]);
     setActive(key);
   }
 
+  function forgetPanes(paneIds: string[]) {
+    for (const setter of [setFilesOpen, setForwardsOpen, setSnippetsOpen]) {
+      setter((prev) => {
+        const next = new Set(prev);
+        paneIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  }
+
   function closeTab(key: string) {
     const idx = tabs.findIndex((t) => t.key === key);
+    const tab = tabs[idx];
     const next = tabs.filter((t) => t.key !== key);
     setTabs(next);
-    setFilesOpen((prev) => {
-      const n = new Set(prev);
-      n.delete(key);
-      return n;
-    });
+    if (tab?.kind === "ssh") {
+      forgetPanes(leaves(tab.root).map((p) => p.paneId));
+    }
     if (active === key) {
       setActive(next.length ? next[Math.min(idx, next.length - 1)].key : null);
     }
   }
 
-  function replaceSshTab(oldKey: string, newId: number) {
-    const newKey = `ssh-${newId}`;
+  function closePane(tabKey: string, paneId: string) {
+    const tab = tabs.find((t) => t.key === tabKey);
+    if (!tab || tab.kind !== "ssh") return;
+    const rest = removeLeaf(tab.root, paneId);
+    if (!rest) {
+      closeTab(tabKey);
+      return;
+    }
+    forgetPanes([paneId]);
+    patchSshTab(tabKey, (t) => ({
+      ...t,
+      root: rest,
+      activePaneId:
+        t.activePaneId === paneId ? leaves(rest)[0].paneId : t.activePaneId,
+    }));
+  }
+
+  async function splitPane(tabKey: string, paneId: string, dir: SplitDir) {
+    const tab = tabs.find((t) => t.key === tabKey);
+    if (!tab || tab.kind !== "ssh") return;
+    const pane = findPane(tab.root, paneId);
+    if (!pane || pane.disconnected) return;
+    try {
+      const newId = await invoke<number>("ssh_duplicate", { id: pane.sshId });
+      const newPane: SshPane = {
+        paneId: `pane-${nextPaneSeq++}`,
+        sshId: newId,
+        meta: pane.meta,
+        savedId: pane.savedId,
+        disconnected: false,
+      };
+      patchSshTab(tabKey, (t) => ({
+        ...t,
+        root: splitLeaf(t.root, paneId, dir, newPane),
+        activePaneId: newPane.paneId,
+      }));
+    } catch (err) {
+      const e = err as { kind?: string; message?: string };
+      setSplitError(
+        e?.kind === "hostKeyUnknown" || e?.kind === "hostKeyChanged"
+          ? "Host key needs review — reconnect from the connect screen."
+          : (e?.message ?? String(err)),
+      );
+    }
+  }
+
+  function setActivePane(tabKey: string, paneId: string) {
     setTabs((prev) =>
       prev.map((t) =>
-        t.key === oldKey && t.kind === "ssh"
-          ? { ...t, sshId: newId, key: newKey, disconnected: false }
+        t.key === tabKey && t.kind === "ssh" && t.activePaneId !== paneId
+          ? { ...t, activePaneId: paneId }
           : t,
       ),
     );
-    for (const setter of [setFilesOpen, setForwardsOpen, setSnippetsOpen]) {
-      setter((prev) => {
-        if (!prev.has(oldKey)) return prev;
-        const next = new Set(prev);
-        next.delete(oldKey);
-        next.add(newKey);
-        return next;
-      });
-    }
-    setActive((a) => (a === oldKey ? newKey : a));
   }
 
-  function markDisconnected(key: string) {
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.key === key && t.kind === "ssh" ? { ...t, disconnected: true } : t,
-      ),
-    );
+  function markDisconnected(tabKey: string, paneId: string) {
+    patchSshTab(tabKey, (t) => ({
+      ...t,
+      root: updatePane(t.root, paneId, { disconnected: true }),
+    }));
+  }
+
+  function replacePaneSession(tabKey: string, paneId: string, newId: number) {
+    patchSshTab(tabKey, (t) => ({
+      ...t,
+      root: updatePane(t.root, paneId, { sshId: newId, disconnected: false }),
+    }));
   }
 
   function toggleIn(
@@ -129,6 +204,9 @@ function App() {
     });
   }
 
+  const activePaneId =
+    activeTab?.kind === "ssh" ? activeTab.activePaneId : null;
+
   return (
     <div className="app">
       <div className="tab-bar">
@@ -138,7 +216,9 @@ function App() {
             className={
               "tab" +
               (active === t.key ? " active" : "") +
-              (t.kind === "ssh" && t.disconnected ? " disconnected" : "")
+              (t.kind === "ssh" && leaves(t.root).some((p) => p.disconnected)
+                ? " disconnected"
+                : "")
             }
             onClick={() => setActive(t.key)}
           >
@@ -165,35 +245,48 @@ function App() {
           +
         </button>
         <div className="tab-bar-right">
-          {activeTab?.kind === "ssh" && (
+          {activeTab?.kind === "ssh" && activePaneId && (
             <>
+              <button
+                className="files-toggle"
+                title="Split right (Ctrl+Shift+D)"
+                onClick={() => splitPane(activeTab.key, activePaneId, "row")}
+              >
+                Split →
+              </button>
+              <button
+                className="files-toggle"
+                title="Split down (Ctrl+Shift+E)"
+                onClick={() => splitPane(activeTab.key, activePaneId, "column")}
+              >
+                Split ↓
+              </button>
               <button
                 className={
                   "files-toggle" +
-                  (snippetsOpen.has(activeTab.key) ? " active" : "")
+                  (snippetsOpen.has(activePaneId) ? " active" : "")
                 }
                 title="Toggle snippets"
-                onClick={() => toggleIn(setSnippetsOpen, activeTab.key)}
+                onClick={() => toggleIn(setSnippetsOpen, activePaneId)}
               >
                 Snippets
               </button>
               <button
                 className={
                   "files-toggle" +
-                  (forwardsOpen.has(activeTab.key) ? " active" : "")
+                  (forwardsOpen.has(activePaneId) ? " active" : "")
                 }
                 title="Toggle port forwards"
-                onClick={() => toggleIn(setForwardsOpen, activeTab.key)}
+                onClick={() => toggleIn(setForwardsOpen, activePaneId)}
               >
                 Forwards
               </button>
               <button
                 className={
-                  "files-toggle" +
-                  (filesOpen.has(activeTab.key) ? " active" : "")
+                  "files-toggle" + (filesOpen.has(activePaneId) ? " active" : "")
                 }
                 title="Toggle file browser"
-                onClick={() => toggleIn(setFilesOpen, activeTab.key)}
+                onClick={() => toggleIn(setFilesOpen, activePaneId)}
               >
                 Files
               </button>
@@ -216,6 +309,14 @@ function App() {
           </select>
         </div>
       </div>
+      {splitError && (
+        <div className="app-error">
+          <span>{splitError}</span>
+          <button title="Dismiss" onClick={() => setSplitError(null)}>
+            ×
+          </button>
+        </div>
+      )}
       <div className="panes">
         {tabs.map((t) => (
           <div
@@ -224,18 +325,34 @@ function App() {
             style={{ display: active === t.key ? undefined : "none" }}
           >
             {t.kind === "ssh" ? (
-              <TerminalPane
-                id={t.sshId}
-                active={active === t.key}
-                showFiles={filesOpen.has(t.key)}
-                showForwards={forwardsOpen.has(t.key)}
-                showSnippets={snippetsOpen.has(t.key)}
-                meta={t.meta}
-                savedConnId={t.savedId}
-                allSessions={liveSessions}
-                onClose={() => closeTab(t.key)}
-                onDisconnected={() => markDisconnected(t.key)}
-                onReconnected={(newId) => replaceSshTab(t.key, newId)}
+              <SplitLayout
+                root={t.root}
+                onRatioChange={(path, ratio) =>
+                  patchSshTab(t.key, (tab) => ({
+                    ...tab,
+                    root: setRatioAt(tab.root, path, ratio),
+                  }))
+                }
+                renderLeaf={(pane) => (
+                  <TerminalPane
+                    id={pane.sshId}
+                    active={active === t.key}
+                    focused={t.activePaneId === pane.paneId}
+                    showFiles={filesOpen.has(pane.paneId)}
+                    showForwards={forwardsOpen.has(pane.paneId)}
+                    showSnippets={snippetsOpen.has(pane.paneId)}
+                    meta={pane.meta}
+                    savedConnId={pane.savedId}
+                    allSessions={liveSessions}
+                    onFocus={() => setActivePane(t.key, pane.paneId)}
+                    onSplit={(dir) => splitPane(t.key, pane.paneId, dir)}
+                    onClose={() => closePane(t.key, pane.paneId)}
+                    onDisconnected={() => markDisconnected(t.key, pane.paneId)}
+                    onReconnected={(newId) =>
+                      replacePaneSession(t.key, pane.paneId, newId)
+                    }
+                  />
+                )}
               />
             ) : (
               <S3Browser storageId={t.storageId} active={active === t.key} />

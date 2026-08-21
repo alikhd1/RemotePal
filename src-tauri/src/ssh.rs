@@ -517,6 +517,25 @@ pub fn ssh_disconnect(state: State<'_, SshSessions>, id: u32) -> Result<(), Stri
     Ok(())
 }
 
+/// Open an additional session with the same chain as an existing one
+/// (split panes). The source session keeps its specs and stays up.
+#[tauri::command]
+pub async fn ssh_duplicate(
+    app: AppHandle,
+    state: State<'_, SshSessions>,
+    id: u32,
+) -> Result<u32, ConnectError> {
+    let specs = state
+        .maps
+        .specs
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| ConnectError::other("no session to duplicate"))?;
+    start_session(app, &state, &specs).await
+}
+
 /// Start a fresh session with the same chain a (possibly dead) session
 /// was opened with. The old session's specs are consumed.
 #[tauri::command]

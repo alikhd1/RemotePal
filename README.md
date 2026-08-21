@@ -17,6 +17,10 @@ your data never touches anyone's cloud but your own.
 - **Tabbed terminals** — xterm.js (WebGL renderer) wired to a russh PTY
   channel; multiple concurrent sessions, live PTY resize, disconnect
   indicators, and hidden sessions stay connected
+- **Split panes** — split a terminal right or down (`Ctrl+Shift+D` /
+  `Ctrl+Shift+E`, or the tab-bar buttons); each pane opens its own SSH
+  session over the same connection chain, dividers drag to resize, and
+  `Ctrl+Shift+W` closes the focused pane
 - **Saved connections** — metadata in `~/.remotepal/connections.json`,
   passwords in the OS credential store (never on disk); one-click connect,
   edit/delete
