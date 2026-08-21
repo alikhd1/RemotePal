@@ -151,7 +151,7 @@ function AiCard() {
         options={providers.map((p) => ({
           value: p.id,
           label: p.label,
-          icon: <ProviderIcon id={p.id} label={p.label} size={16} />,
+          icon: <ProviderIcon id={p.id} label={p.label} size={22} />,
         }))}
         onChange={switchProvider}
       />

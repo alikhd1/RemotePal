@@ -2195,6 +2195,20 @@ body,
   margin-top: 8px;
 }
 
+/* inlined provider logos; the SVGs size themselves in em */
+.provider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+/* monochrome marks follow the theme rather than a fixed brand colour */
+.provider-icon.mono {
+  color: var(--fg);
+}
+
 .ai-bio-toggle {
   display: flex;
   align-items: center;

@@ -1,96 +1,71 @@
-// Per-provider badges for the AI provider pickers.
+// Real provider logos for the AI provider pickers.
 //
-// Each provider gets a rounded badge in its own brand colour so the
-// entries are told apart at a glance. Where a vendor's mark is simple
-// geometry we draw it (Gemini's four-point star, xAI's X, the Claude
-// burst); the rest carry a monogram, because approximating an intricate
-// logo (OpenAI's knot, Ollama's llama, DeepSeek's whale) from memory
-// produces something worse than a clean letterform. Drop official SVGs
-// in here if you want exact marks — nothing else needs to change.
+// The SVGs in ./assets/providers are LobeHub's icon set
+// (https://lobehub.com/icons), downloaded and committed rather than
+// pulled at runtime — nothing here touches the network.
 //
-// Everything is inline SVG: no network requests, no bundled assets.
+// They are inlined with `?raw` instead of being used as <img src>, so the
+// monochrome marks (which are authored with fill="currentColor") pick up
+// the theme's foreground colour and stay visible on both light and dark.
+// The markup is a static, reviewed asset in this repo, not remote or user
+// input. Providers with no upstream logo (GapGPT, anything you define
+// yourself) fall back to a brand-coloured monogram badge.
 
-interface Brand {
-  color: string;
-  /** monogram used when there is no drawn mark */
-  letter?: string;
-  mark?: "burst" | "star" | "x";
-}
+import anthropicSvg from "./assets/providers/anthropic.svg?raw";
+import deepseekSvg from "./assets/providers/deepseek.svg?raw";
+import geminiSvg from "./assets/providers/gemini.svg?raw";
+import grokSvg from "./assets/providers/grok.svg?raw";
+import groqSvg from "./assets/providers/groq.svg?raw";
+import ollamaSvg from "./assets/providers/ollama.svg?raw";
+import openaiSvg from "./assets/providers/openai.svg?raw";
+import openrouterSvg from "./assets/providers/openrouter.svg?raw";
 
-const BRANDS: Record<string, Brand> = {
-  anthropic: { color: "#D97757", mark: "burst" },
-  openai: { color: "#10A37F", letter: "O" },
-  deepseek: { color: "#4D6BFE", letter: "D" },
-  gemini: { color: "#4285F4", mark: "star" },
-  grok: { color: "#4B5563", mark: "x" },
-  groq: { color: "#F55036", letter: "G" },
-  openrouter: { color: "#6467F2", letter: "R" },
-  gapgpt: { color: "#0EA5E9", letter: "G" },
-  ollama: { color: "#6B7280", letter: "L" },
+const LOGOS: Record<string, string> = {
+  anthropic: anthropicSvg,
+  deepseek: deepseekSvg,
+  gemini: geminiSvg,
+  grok: grokSvg,
+  groq: groqSvg,
+  ollama: ollamaSvg,
+  openai: openaiSvg,
+  openrouter: openrouterSvg,
 };
 
-const FALLBACK: Brand = { color: "#8B8B8B" };
+/// Marks drawn in currentColor; these follow the theme instead of a
+/// fixed brand colour (which is how the vendors intend them to be used).
+const MONO = new Set(["openai", "grok", "groq", "openrouter", "ollama"]);
 
-function markFor(brand: Brand, letter: string) {
-  switch (brand.mark) {
-    case "star":
-      // four-point sparkle
-      return (
-        <path
-          d="M12 4.5c.5 3.9 2.6 6 6.5 6.5-3.9.5-6 2.6-6.5 6.5-.5-3.9-2.6-6-6.5-6.5 3.9-.5 6-2.6 6.5-6.5z"
-          fill="#fff"
-        />
-      );
-    case "x":
-      return (
-        <path
-          d="M7.5 6.5l9 11M16.5 6.5l-9 11"
-          stroke="#fff"
-          strokeWidth="2.1"
-          strokeLinecap="round"
-        />
-      );
-    case "burst":
-      // radiating spokes, in the spirit of the Claude mark
-      return (
-        <g stroke="#fff" strokeWidth="1.9" strokeLinecap="round">
-          <path d="M12 5v14" />
-          <path d="M5 12h14" />
-          <path d="M7 7l10 10" />
-          <path d="M17 7L7 17" />
-        </g>
-      );
-    default:
-      return (
-        <text
-          x="12"
-          y="12"
-          textAnchor="middle"
-          dominantBaseline="central"
-          fill="#fff"
-          fontSize="12"
-          fontWeight="700"
-          fontFamily="system-ui, sans-serif"
-        >
-          {letter}
-        </text>
-      );
-  }
-}
+/// Badge colours for providers with no upstream logo.
+const FALLBACK_COLORS: Record<string, string> = {
+  gapgpt: "#0EA5E9",
+};
 
 interface Props {
   /** provider id from aiConfig */
   id: string;
-  /** used for the monogram of user-defined providers */
+  /** used for the monogram when there is no logo */
   label?: string;
   size?: number;
 }
 
-function ProviderIcon({ id, label, size = 14 }: Props) {
-  const brand = BRANDS[id] ?? FALLBACK;
-  const letter =
-    brand.letter ?? (label?.trim()?.[0] ?? id[0] ?? "?").toUpperCase();
+function ProviderIcon({ id, label, size = 18 }: Props) {
+  const logo = LOGOS[id];
 
+  if (logo) {
+    // the files size themselves in em, so the wrapper's font-size is the
+    // single knob that scales them
+    return (
+      <span
+        className={"provider-icon" + (MONO.has(id) ? " mono" : "")}
+        style={{ fontSize: size }}
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: logo }}
+      />
+    );
+  }
+
+  const color = FALLBACK_COLORS[id] ?? "#8B8B8B";
+  const letter = (label?.trim()?.[0] ?? id[0] ?? "?").toUpperCase();
   return (
     <svg
       width={size}
@@ -99,8 +74,19 @@ function ProviderIcon({ id, label, size = 14 }: Props) {
       aria-hidden="true"
       style={{ display: "block", flexShrink: 0 }}
     >
-      <rect width="24" height="24" rx="6" fill={brand.color} />
-      {markFor(brand, letter)}
+      <rect width="24" height="24" rx="6" fill={color} />
+      <text
+        x="12"
+        y="12"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="#fff"
+        fontSize="12"
+        fontWeight="700"
+        fontFamily="system-ui, sans-serif"
+      >
+        {letter}
+      </text>
     </svg>
   );
 }

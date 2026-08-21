@@ -616,7 +616,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
             options={getProviders().map((p) => ({
               value: p.id,
               label: p.label,
-              icon: <ProviderIcon id={p.id} label={p.label} size={13} />,
+              icon: <ProviderIcon id={p.id} label={p.label} size={18} />,
             }))}
             onChange={switchProvider}
           />
