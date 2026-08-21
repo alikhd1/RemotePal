@@ -136,9 +136,9 @@ struct SyncProgress<'a> {
     total: usize,
 }
 
-type FileMap = std::collections::HashMap<String, (u64, i64)>;
+pub(crate) type FileMap = std::collections::HashMap<String, (u64, i64)>;
 
-fn collect_local(root: &std::path::Path) -> Result<FileMap, String> {
+pub(crate) fn collect_local(root: &std::path::Path) -> Result<FileMap, String> {
     let mut files = FileMap::new();
     let mut stack = vec![(root.to_path_buf(), String::new())];
     while let Some((dir, rel)) = stack.pop() {
@@ -204,7 +204,7 @@ async fn collect_remote(
 
 /// Relative paths needing upload: missing remotely, size differs, or
 /// local mtime newer (+1s fudge: filesystems differ in granularity).
-fn plan_copies(local: &FileMap, remote: &FileMap) -> Vec<String> {
+pub(crate) fn plan_copies(local: &FileMap, remote: &FileMap) -> Vec<String> {
     let mut to_copy: Vec<String> = local
         .iter()
         .filter(|(rel, (size, mtime))| match remote.get(*rel) {

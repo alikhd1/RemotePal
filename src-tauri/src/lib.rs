@@ -16,6 +16,7 @@ pub fn run() {
         .manage(connections::StoreLock::default())
         .manage(sftp::EditState::default())
         .manage(s3::S3StoreLock::default())
+        .manage(s3::S3EditState::default())
         .manage(forwards::Forwards::default())
         .invoke_handler(tauri::generate_handler![
             ssh::ssh_connect,
@@ -48,6 +49,11 @@ pub fn run() {
             s3::s3_download,
             s3::s3_delete,
             s3::s3_rename,
+            s3::s3_list_buckets,
+            s3::s3_create_bucket,
+            s3::s3_presign,
+            s3::s3_sync,
+            s3::s3_edit,
             forwards::forward_start,
             forwards::forward_stop,
             forwards::forwards_list,

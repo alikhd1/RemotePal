@@ -56,28 +56,47 @@ interface Props {
 
 function S3Browser({ storageId, active }: Props) {
   const [prefix, setPrefix] = useState("");
+  // bucket being browsed; null = bucket list (unpinned storages only)
+  const [bucket, setBucket] = useState<string | null>(null);
+  const [pinned, setPinned] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [inputMode, setInputMode] = useState<"rename" | null>(null);
+  const [inputMode, setInputMode] = useState<"rename" | "mkbucket" | null>(
+    null,
+  );
   const [inputValue, setInputValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const transferIdRef = useRef<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+
+  function flashNotice(text: string) {
+    setNotice(text);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 4000);
+  }
   const prefixRef = useRef("");
+  const bucketRef = useRef<string | null>(null);
   void active;
 
-  async function load(pfx: string) {
+  function resetView() {
     setError(null);
     setSelected(new Set());
     setAnchor(null);
     setConfirmDelete(false);
     setInputMode(null);
+  }
+
+  async function load(pfx: string) {
+    resetView();
     try {
       const listing = await invoke<S3Listing>("s3_list", {
         id: storageId,
+        bucket: bucketRef.current,
         prefix: pfx,
       });
       const folderRows: Row[] = listing.folders.map((f) => ({
@@ -102,21 +121,96 @@ function S3Browser({ storageId, active }: Props) {
     }
   }
 
-  useEffect(() => {
+  async function loadBuckets() {
+    resetView();
+    bucketRef.current = null;
+    setBucket(null);
+    setPrefix("");
+    prefixRef.current = "";
+    try {
+      const names = await invoke<string[]>("s3_list_buckets", {
+        id: storageId,
+      });
+      setRows(
+        names.map((name) => ({
+          id: `bucket:${name}`,
+          name,
+          isFolder: true,
+          size: 0,
+          lastModified: "",
+        })),
+      );
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  function enterBucket(name: string) {
+    bucketRef.current = name;
+    setBucket(name);
     load("");
-    const unlisten: Promise<UnlistenFn> = listen<{
-      transferId: string;
-      done: number;
-      total: number;
-    }>("s3-progress", (e) => {
-      if (e.payload.transferId === transferIdRef.current) {
-        setTransfer((t) =>
-          t ? { ...t, done: e.payload.done, total: e.payload.total } : t,
-        );
-      }
-    });
+  }
+
+  useEffect(() => {
+    invoke<{ id: string; bucket: string }[]>("s3_list_storages")
+      .then((list) => {
+        const storage = list.find((s) => s.id === storageId);
+        if (storage?.bucket) {
+          setPinned(true);
+          enterBucket(storage.bucket);
+        } else {
+          setPinned(false);
+          loadBuckets();
+        }
+      })
+      .catch((err) => setError(String(err)));
+    const unlisteners: Promise<UnlistenFn>[] = [
+      listen<{ transferId: string; done: number; total: number }>(
+        "s3-progress",
+        (e) => {
+          if (e.payload.transferId === transferIdRef.current) {
+            setTransfer((t) =>
+              t ? { ...t, done: e.payload.done, total: e.payload.total } : t,
+            );
+          }
+        },
+      ),
+      listen<{
+        transferId: string;
+        current: string;
+        index: number;
+        total: number;
+      }>("sync-progress", (e) => {
+        if (e.payload.transferId === transferIdRef.current) {
+          setTransfer((t) =>
+            t
+              ? {
+                  ...t,
+                  label: `⇅ ${e.payload.current}`,
+                  done: e.payload.index,
+                  total: e.payload.total,
+                }
+              : t,
+          );
+        }
+      }),
+      listen<{ storageId: string; name: string }>("s3-edit-uploaded", (e) => {
+        if (e.payload.storageId === storageId) {
+          flashNotice(`Saved ${e.payload.name} — uploaded`);
+        }
+      }),
+      listen<{ storageId: string; name: string; message?: string }>(
+        "s3-edit-error",
+        (e) => {
+          if (e.payload.storageId === storageId) {
+            setError(`upload of ${e.payload.name} failed: ${e.payload.message}`);
+          }
+        },
+      ),
+    ];
     return () => {
-      unlisten.then((un) => un());
+      unlisteners.forEach((p) => p.then((un) => un()));
+      window.clearTimeout(noticeTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageId]);
@@ -178,6 +272,7 @@ function S3Browser({ storageId, active }: Props) {
       await runTransfer(label, (tid) =>
         invoke<number>("s3_upload", {
           id: storageId,
+          bucket: bucketRef.current,
           localPath: files[i],
           key: prefixRef.current + name,
           transferId: tid,
@@ -198,6 +293,7 @@ function S3Browser({ storageId, active }: Props) {
       await runTransfer(`↓ ${files[0].name}`, (tid) =>
         invoke<number>("s3_download", {
           id: storageId,
+          bucket: bucketRef.current,
           key: files[0].id,
           localPath: local,
           transferId: tid,
@@ -214,6 +310,7 @@ function S3Browser({ storageId, active }: Props) {
       await runTransfer(`↓ ${files[i].name} (${i + 1}/${files.length})`, (tid) =>
         invoke<number>("s3_download", {
           id: storageId,
+          bucket: bucketRef.current,
           key: files[i].id,
           localPath: joinLocal(dir, files[i].name),
           transferId: tid,
@@ -230,6 +327,7 @@ function S3Browser({ storageId, active }: Props) {
       for (const row of selectedRows) {
         await invoke("s3_delete", {
           id: storageId,
+          bucket: bucketRef.current,
           key: row.id,
           isPrefix: row.isFolder,
         });
@@ -241,8 +339,97 @@ function S3Browser({ storageId, active }: Props) {
     }
   }
 
+  async function copyLink(row: Row) {
+    try {
+      const url = await invoke<string>("s3_presign", {
+        id: storageId,
+        bucket: bucketRef.current,
+        key: row.id,
+        expirySecs: 3600,
+      });
+      await navigator.clipboard.writeText(url);
+      flashNotice(`Download link for ${row.name} copied (valid 1 h).`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function editObject(row: Row) {
+    setError(null);
+    try {
+      await invoke<string>("s3_edit", {
+        id: storageId,
+        bucket: bucketRef.current,
+        key: row.id,
+      });
+      flashNotice(`Editing ${row.name} — saves auto-upload`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function syncFolder(deleteExtra: boolean) {
+    if (transfer) return;
+    const dir = await openDialog({
+      directory: true,
+      title: deleteExtra
+        ? "Mirror local folder here (deletes remote extras)"
+        : "Sync local folder into current prefix",
+    });
+    if (typeof dir !== "string") return;
+    const tid = `s3sync${Date.now()}`;
+    transferIdRef.current = tid;
+    setTransfer({ label: "⇅ comparing…", done: 0, total: 0 });
+    setError(null);
+    try {
+      const summary = await invoke<{
+        uploaded: number;
+        deleted: number;
+        skipped: number;
+      }>("s3_sync", {
+        id: storageId,
+        bucket: bucketRef.current,
+        localDir: dir,
+        prefix: prefixRef.current,
+        deleteExtra,
+        transferId: tid,
+      });
+      flashNotice(
+        `Sync done: ${summary.uploaded} uploaded, ` +
+          `${summary.skipped} unchanged` +
+          (deleteExtra ? `, ${summary.deleted} deleted` : ""),
+      );
+      load(prefixRef.current);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      transferIdRef.current = null;
+      setTransfer(null);
+    }
+  }
+
   function menuItems(): MenuItem[] {
     const items: MenuItem[] = [];
+    if (bucket === null) {
+      if (singleRow) {
+        items.push({
+          label: `Open ${singleRow.name}`,
+          onClick: () => enterBucket(singleRow.name),
+        });
+      }
+      items.push(
+        {
+          label: "New bucket…",
+          onClick: () => {
+            setInputMode("mkbucket");
+            setInputValue("");
+          },
+        },
+        { label: "", separator: true },
+        { label: "Refresh", onClick: loadBuckets },
+      );
+      return items;
+    }
     const files = selectedRows.filter((r) => !r.isFolder);
     if (selectedRows.length > 0) {
       if (singleRow?.isFolder) {
@@ -255,13 +442,23 @@ function S3Browser({ storageId, active }: Props) {
         });
       }
       if (singleRow && !singleRow.isFolder) {
-        items.push({
-          label: "Rename…",
-          onClick: () => {
-            setInputMode("rename");
-            setInputValue(singleRow.name);
+        items.push(
+          {
+            label: "Edit (auto-upload on save)",
+            onClick: () => editObject(singleRow),
           },
-        });
+          {
+            label: "Copy download link (1 h)",
+            onClick: () => copyLink(singleRow),
+          },
+          {
+            label: "Rename…",
+            onClick: () => {
+              setInputMode("rename");
+              setInputValue(singleRow.name);
+            },
+          },
+        );
       }
       items.push(
         {
@@ -280,17 +477,39 @@ function S3Browser({ storageId, active }: Props) {
     items.push(
       { label: "Upload files…", onClick: upload },
       { label: "", separator: true },
+      { label: "Sync local folder here…", onClick: () => syncFolder(false) },
+      {
+        label: "Mirror local folder here…",
+        danger: true,
+        onClick: () => syncFolder(true),
+      },
+      { label: "", separator: true },
       { label: "Refresh", onClick: () => load(prefixRef.current) },
     );
     return items;
   }
 
-  async function submitRename(e: React.FormEvent) {
+  async function submitInput(e: React.FormEvent) {
     e.preventDefault();
-    if (!singleRow || singleRow.isFolder || !inputValue.trim()) return;
+    if (!inputValue.trim()) return;
+    if (inputMode === "mkbucket") {
+      try {
+        await invoke("s3_create_bucket", {
+          id: storageId,
+          name: inputValue.trim(),
+        });
+        setInputMode(null);
+        loadBuckets();
+      } catch (err) {
+        setError(String(err));
+      }
+      return;
+    }
+    if (!singleRow || singleRow.isFolder) return;
     try {
       await invoke("s3_rename", {
         id: storageId,
+        bucket: bucketRef.current,
         from: singleRow.id,
         to: prefix + inputValue.trim(),
       });
@@ -302,6 +521,10 @@ function S3Browser({ storageId, active }: Props) {
   }
 
   function up() {
+    if (prefix === "" && !pinned && bucket !== null) {
+      loadBuckets();
+      return;
+    }
     const trimmed = prefix.replace(/\/$/, "");
     const idx = trimmed.lastIndexOf("/");
     load(idx >= 0 ? trimmed.slice(0, idx + 1) : "");
@@ -310,13 +533,25 @@ function S3Browser({ storageId, active }: Props) {
   return (
     <div className="files-panel full">
       <div className="files-pathbar">
-        <button type="button" title="Up" disabled={!prefix} onClick={up}>
+        <button
+          type="button"
+          title="Up"
+          disabled={!prefix && (pinned || bucket === null)}
+          onClick={up}
+        >
           ↑
         </button>
-        <div className="s3-prefix" title={prefix || "/"}>
-          {prefix || "/"}
+        <div
+          className="s3-prefix"
+          title={bucket === null ? "buckets" : `${bucket}/${prefix}`}
+        >
+          {bucket === null ? "(buckets)" : `${bucket}/${prefix}`}
         </div>
-        <button type="button" title="Refresh" onClick={() => load(prefix)}>
+        <button
+          type="button"
+          title="Refresh"
+          onClick={() => (bucket === null ? loadBuckets() : load(prefix))}
+        >
           ⟳
         </button>
       </div>
@@ -340,11 +575,12 @@ function S3Browser({ storageId, active }: Props) {
         </div>
       )}
 
-      {inputMode === "rename" && (
-        <form className="files-inputrow" onSubmit={submitRename}>
+      {inputMode !== null && (
+        <form className="files-inputrow" onSubmit={submitInput}>
           <input
             autoFocus
             value={inputValue}
+            placeholder={inputMode === "mkbucket" ? "new bucket name" : "new name"}
             onChange={(e) => setInputValue(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setInputMode(null);
@@ -378,7 +614,8 @@ function S3Browser({ storageId, active }: Props) {
               setCtxMenu({ x: ev.clientX, y: ev.clientY });
             }}
             onDoubleClick={() => {
-              if (row.isFolder) load(row.id);
+              if (bucket === null) enterBucket(row.name);
+              else if (row.isFolder) load(row.id);
             }}
           >
             <span className="files-icon">{row.isFolder ? "📁" : "📄"}</span>
@@ -419,6 +656,7 @@ function S3Browser({ storageId, active }: Props) {
         </div>
       )}
 
+      {notice && <div className="files-notice">{notice}</div>}
       {error && <div className="files-error">{error}</div>}
       {ctxMenu && (
         <ContextMenu

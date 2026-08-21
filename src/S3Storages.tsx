@@ -191,7 +191,7 @@ function S3Storages({ onOpen }: Props) {
               <input
                 value={bucket}
                 onChange={(e) => setBucket(e.currentTarget.value)}
-                required
+                placeholder="(empty = browse all)"
               />
             </label>
             <label className="grow">

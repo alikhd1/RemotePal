@@ -21,7 +21,7 @@ async fn main() {
         access_key: "testing".into(),
         path_style: true,
     };
-    let bucket = build_bucket(&storage, "testing").expect("build bucket");
+    let bucket = build_bucket(&storage, "testing", None).expect("build bucket");
 
     bucket
         .put_object("docs/readme.txt", b"hello from remotepal")
@@ -67,5 +67,54 @@ async fn main() {
         .delete_object("docs/readme.txt")
         .await
         .expect("cleanup nested");
+
+    // bucket-level operations (unpinned storages browse all buckets)
+    let (region, creds) =
+        remotepal_lib::s3::region_creds(&storage, "testing").expect("region");
+    let names: Vec<String> = s3::Bucket::list_buckets(region.clone(), creds.clone())
+        .await
+        .expect("list buckets")
+        .bucket_names()
+        .collect();
+    assert!(
+        names.contains(&"smoke-bucket".to_string()),
+        "bucket list: {names:?}"
+    );
+    std::env::set_var("RUST_S3_SKIP_LOCATION_CONSTRAINT", "true");
+    let created = s3::Bucket::create_with_path_style(
+        "smoke-bucket-2",
+        region.clone(),
+        creds.clone(),
+        s3::BucketConfiguration::default(),
+    )
+    .await
+    .expect("create bucket");
+    std::env::remove_var("RUST_S3_SKIP_LOCATION_CONSTRAINT");
+    assert!(
+        created.success(),
+        "create bucket HTTP {}: {}",
+        created.response_code,
+        created.response_text
+    );
+    let names: Vec<String> = s3::Bucket::list_buckets(region, creds)
+        .await
+        .expect("list buckets again")
+        .bucket_names()
+        .collect();
+    assert!(
+        names.contains(&"smoke-bucket-2".to_string()),
+        "created bucket missing: {names:?}"
+    );
+
+    // presigned link contains the bucket and a signature
+    let url = bucket
+        .presign_get("docs/readme.txt", 3600, None)
+        .await
+        .expect("presign");
+    assert!(
+        url.contains("smoke-bucket") && url.contains("X-Amz-Signature"),
+        "odd presigned url: {url}"
+    );
+
     println!("S3 SMOKE OK");
 }
