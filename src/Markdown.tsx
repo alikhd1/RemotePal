@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Play } from "lucide-react";
 
 /** Inline: `code`, **bold**, *italic*, [text](url). */
 function renderInline(text: string): ReactNode[] {
@@ -63,7 +64,14 @@ const unordered = (l: string) => /^\s*[-*+]\s+(.*)$/.exec(l);
 const ordered = (l: string) => /^\s*\d+\.\s+(.*)$/.exec(l);
 const tableSep = (l: string) => /^[\s|:-]*-[\s|:-]*$/.test(l) && l.includes("-");
 
-function Markdown({ text }: { text: string }) {
+function Markdown({
+  text,
+  onRunCommand,
+}: {
+  text: string;
+  /** when given, fenced code blocks get a "run" button */
+  onRunCommand?: (command: string) => void;
+}) {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -86,9 +94,21 @@ function Markdown({ text }: { text: string }) {
         i++;
       }
       i++; // closing fence
+      const code = body.join("\n");
       blocks.push(
         <pre key={key++} className="ai-md-pre">
-          <code>{body.join("\n")}</code>
+          {onRunCommand && code.trim() && (
+            <button
+              type="button"
+              className="ai-md-run"
+              title="Run this in the terminal"
+              onClick={() => onRunCommand(code)}
+            >
+              <Play size={11} />
+              run
+            </button>
+          )}
+          <code>{code}</code>
         </pre>,
       );
       continue;

@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { LiveSession, SessionMeta } from "./SnippetsPanel";
 import { readTerminal } from "./terminalRegistry";
+import { pushHistory } from "./commandHistory";
 import {
   getProvider,
   setProvider,
@@ -383,6 +384,26 @@ function AiPanel({ sessionId, allSessions }: Props) {
     if (turnId) invoke("ai_cancel", { turnId }).catch(() => {});
   }
 
+  // ---- run a snippet of an answer in the terminal --------------------
+
+  /// Types the block into the target session's visible terminal and runs
+  /// it. This is the user pressing the button on a command they can see —
+  /// distinct from the model's own run_command, which still needs an
+  /// explicit approval before anything executes.
+  async function runInTerminal(command: string) {
+    const sid = targetRef.current;
+    try {
+      await invoke("ssh_write", {
+        id: sid,
+        data: command.replace(/\r\n/g, "\n").replace(/\n+$/, "") + "\n",
+      });
+      pushHistory(command.trim());
+      setNotice(`Ran in ${hostFor(sid)}.`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   // ---- save a command as a snippet ----------------------------------
 
   function openSnippet(command: string) {
@@ -472,6 +493,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
             item={m}
             hostFor={hostFor}
             onSaveCommand={openSnippet}
+            onRunCommand={runInTerminal}
           />
         ))}
 
@@ -652,10 +674,12 @@ function MessageView({
   item,
   hostFor,
   onSaveCommand,
+  onRunCommand,
 }: {
   item: ChatItem;
   hostFor: (sid: number) => string;
   onSaveCommand: (command: string) => void;
+  onRunCommand: (command: string) => void;
 }) {
   return (
     <>
@@ -670,7 +694,7 @@ function MessageView({
               }
             >
               {item.role === "assistant" ? (
-                <Markdown text={b.text} />
+                <Markdown text={b.text} onRunCommand={onRunCommand} />
               ) : (
                 <div className="ai-text">{b.text}</div>
               )}
