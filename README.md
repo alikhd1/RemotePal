@@ -22,7 +22,15 @@ Early. Working so far:
   SSH connection, no re-auth) with navigation, upload/download with
   progress, new dir, rename, and delete
 
-Not yet ported from the PyQt app: vault encryption/backup, edit-on-save auto-upload, S3 browser, folder sync, port forwards, jump hosts, themes.
+- Edit-on-save: open a remote file in your local editor; saves re-upload
+  automatically (debounced file watcher)
+- Multi-select and OS drag-and-drop upload in the file browser
+- S3 browser: storages (secret keys in the Credential Manager) open as
+  tabs with prefix navigation, upload/download with progress, rename,
+  and recursive prefix delete; works with AWS or any custom endpoint
+  (MinIO, moto) via path-style addressing
+
+Not yet ported from the PyQt app: vault encryption/backup, folder sync, port forwards, jump hosts, themes.
 
 ## Development
 

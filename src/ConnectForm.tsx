@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import S3Storages from "./S3Storages";
 
 export interface SavedConnection {
   id: string;
@@ -40,9 +41,10 @@ function errMessage(err: unknown): string {
 
 interface Props {
   onConnected: (id: number, title: string) => void;
+  onOpenS3: (storageId: string, title: string) => void;
 }
 
-function ConnectForm({ onConnected }: Props) {
+function ConnectForm({ onConnected, onOpenS3 }: Props) {
   const [saved, setSaved] = useState<SavedConnection[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -200,6 +202,7 @@ function ConnectForm({ onConnected }: Props) {
   return (
     <div className="connect-screen">
       <div className="connect-layout">
+        <div className="connect-side">
         <div className="saved-panel">
           <h2>Saved</h2>
           {saved.length === 0 && (
@@ -253,6 +256,8 @@ function ConnectForm({ onConnected }: Props) {
               </li>
             ))}
           </ul>
+        </div>
+        <S3Storages onOpen={onOpenS3} />
         </div>
 
         <form className="connect-form" onSubmit={connect}>

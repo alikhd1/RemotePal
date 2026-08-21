@@ -40,6 +40,12 @@ body,
   align-items: flex-start;
 }
 
+.connect-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 /* ------------------------------------------------- saved connections */
 
 .saved-panel {
@@ -505,6 +511,60 @@ body,
 .files-panel.dropping {
   outline: 2px dashed var(--accent);
   outline-offset: -4px;
+}
+
+.files-panel.full {
+  width: auto;
+  flex: 1;
+  border-left: none;
+}
+
+.s3-prefix {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.s3-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.s3-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.s3-form input {
+  padding: 6px 9px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.s3-form input:focus {
+  border-color: var(--accent);
+}
+
+.s3-form .check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  cursor: pointer;
 }
 
 .files-pathbar {

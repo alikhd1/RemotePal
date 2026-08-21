@@ -1,4 +1,5 @@
 pub mod connections;
+pub mod s3;
 pub mod sftp;
 pub mod ssh;
 
@@ -10,6 +11,7 @@ pub fn run() {
         .manage(ssh::SshSessions::default())
         .manage(connections::StoreLock::default())
         .manage(sftp::EditState::default())
+        .manage(s3::S3StoreLock::default())
         .invoke_handler(tauri::generate_handler![
             ssh::ssh_connect,
             ssh::ssh_write,
@@ -28,6 +30,14 @@ pub fn run() {
             sftp::sftp_download,
             sftp::sftp_upload,
             sftp::sftp_edit,
+            s3::s3_list_storages,
+            s3::s3_save_storage,
+            s3::s3_delete_storage,
+            s3::s3_list,
+            s3::s3_upload,
+            s3::s3_download,
+            s3::s3_delete,
+            s3::s3_rename,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

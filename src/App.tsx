@@ -1,69 +1,97 @@
 import { useState } from "react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
+import S3Browser from "./S3Browser";
 import "./App.css";
 
-interface SessionInfo {
-  id: number;
-  title: string;
-  disconnected: boolean;
-}
+type Tab =
+  | {
+      kind: "ssh";
+      key: string;
+      sshId: number;
+      title: string;
+      disconnected: boolean;
+    }
+  | { kind: "s3"; key: string; storageId: string; title: string };
+
+let nextS3TabSeq = 1;
 
 function App() {
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  // active session id; null shows the connect view ("+" tab)
-  const [active, setActive] = useState<number | null>(null);
-  const [filesOpen, setFilesOpen] = useState<Set<number>>(new Set());
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  // active tab key; null shows the connect view ("+" tab)
+  const [active, setActive] = useState<string | null>(null);
+  const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
 
-  function toggleFiles(id: number) {
+  const activeTab = tabs.find((t) => t.key === active) ?? null;
+
+  function addSshTab(sshId: number, title: string) {
+    const key = `ssh-${sshId}`;
+    setTabs((prev) => [
+      ...prev,
+      { kind: "ssh", key, sshId, title, disconnected: false },
+    ]);
+    setActive(key);
+  }
+
+  function addS3Tab(storageId: string, title: string) {
+    const key = `s3-${nextS3TabSeq++}`;
+    setTabs((prev) => [...prev, { kind: "s3", key, storageId, title }]);
+    setActive(key);
+  }
+
+  function closeTab(key: string) {
+    const idx = tabs.findIndex((t) => t.key === key);
+    const next = tabs.filter((t) => t.key !== key);
+    setTabs(next);
     setFilesOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+      const n = new Set(prev);
+      n.delete(key);
+      return n;
     });
-  }
-
-  function addSession(id: number, title: string) {
-    setSessions((prev) => [...prev, { id, title, disconnected: false }]);
-    setActive(id);
-  }
-
-  function closeTab(id: number) {
-    const idx = sessions.findIndex((s) => s.id === id);
-    const next = sessions.filter((s) => s.id !== id);
-    setSessions(next);
-    if (active === id) {
-      setActive(next.length ? next[Math.min(idx, next.length - 1)].id : null);
+    if (active === key) {
+      setActive(next.length ? next[Math.min(idx, next.length - 1)].key : null);
     }
   }
 
-  function markDisconnected(id: number) {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, disconnected: true } : s)),
+  function markDisconnected(key: string) {
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.key === key && t.kind === "ssh" ? { ...t, disconnected: true } : t,
+      ),
     );
+  }
+
+  function toggleFiles(key: string) {
+    setFilesOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   return (
     <div className="app">
       <div className="tab-bar">
-        {sessions.map((s) => (
+        {tabs.map((t) => (
           <div
-            key={s.id}
+            key={t.key}
             className={
               "tab" +
-              (active === s.id ? " active" : "") +
-              (s.disconnected ? " disconnected" : "")
+              (active === t.key ? " active" : "") +
+              (t.kind === "ssh" && t.disconnected ? " disconnected" : "")
             }
-            onClick={() => setActive(s.id)}
+            onClick={() => setActive(t.key)}
           >
-            <span className="tab-title">{s.title}</span>
+            <span className="tab-title">
+              {t.kind === "s3" ? `S3 · ${t.title}` : t.title}
+            </span>
             <button
               className="tab-close"
-              title="Close session"
+              title="Close"
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(s.id);
+                closeTab(t.key);
               }}
             >
               ×
@@ -77,39 +105,43 @@ function App() {
         >
           +
         </button>
-        {active !== null && (
+        {activeTab?.kind === "ssh" && (
           <button
             className={
-              "files-toggle" + (filesOpen.has(active) ? " active" : "")
+              "files-toggle" + (filesOpen.has(activeTab.key) ? " active" : "")
             }
             title="Toggle file browser"
-            onClick={() => toggleFiles(active)}
+            onClick={() => toggleFiles(activeTab.key)}
           >
             Files
           </button>
         )}
       </div>
       <div className="panes">
-        {sessions.map((s) => (
+        {tabs.map((t) => (
           <div
-            key={s.id}
+            key={t.key}
             className="pane-holder"
-            style={{ display: active === s.id ? undefined : "none" }}
+            style={{ display: active === t.key ? undefined : "none" }}
           >
-            <TerminalPane
-              id={s.id}
-              active={active === s.id}
-              showFiles={filesOpen.has(s.id)}
-              onClose={() => closeTab(s.id)}
-              onDisconnected={() => markDisconnected(s.id)}
-            />
+            {t.kind === "ssh" ? (
+              <TerminalPane
+                id={t.sshId}
+                active={active === t.key}
+                showFiles={filesOpen.has(t.key)}
+                onClose={() => closeTab(t.key)}
+                onDisconnected={() => markDisconnected(t.key)}
+              />
+            ) : (
+              <S3Browser storageId={t.storageId} active={active === t.key} />
+            )}
           </div>
         ))}
         <div
           className="pane-holder"
           style={{ display: active === null ? undefined : "none" }}
         >
-          <ConnectForm onConnected={addSession} />
+          <ConnectForm onConnected={addSshTab} onOpenS3={addS3Tab} />
         </div>
       </div>
     </div>

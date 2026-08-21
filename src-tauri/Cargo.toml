@@ -32,4 +32,5 @@ keyring = "4.1.6"
 russh-sftp = "2.4.0"
 tauri-plugin-dialog = "2.7.2"
 notify = "8.2.0"
+rust-s3 = { version = "0.37.2", default-features = false, features = ["tokio-native-tls"] }
 
