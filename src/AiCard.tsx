@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Select } from "./Dropdown";
 import {
   PROVIDERS,
   getProvider,
@@ -86,17 +87,11 @@ function AiCard() {
       <h2>AI Copilot</h2>
 
       <label className="ai-field-label">Provider</label>
-      <select
-        className="ai-target"
+      <Select
         value={provider}
-        onChange={(e) => switchProvider(e.currentTarget.value)}
-      >
-        {PROVIDERS.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+        options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+        onChange={switchProvider}
+      />
 
       <label className="ai-field-label">API key</label>
       <input

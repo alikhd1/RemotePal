@@ -1940,20 +1940,10 @@ body,
 }
 
 .ai-title {
+  margin-right: auto;
   font-size: 13px;
   font-weight: 600;
   color: var(--fg);
-}
-
-.ai-target {
-  margin-left: auto;
-  max-width: 160px;
-  padding: 2px 6px;
-  font-size: 12px;
-  color: var(--fg);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
 }
 
 .ai-msgs {

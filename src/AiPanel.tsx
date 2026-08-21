@@ -13,6 +13,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { LiveSession, SessionMeta } from "./SnippetsPanel";
 import { readTerminal } from "./terminalRegistry";
 import { getProvider, getModel } from "./aiConfig";
+import { Select } from "./Dropdown";
 
 // Anthropic content blocks, stored verbatim.
 type Block = any;
@@ -348,18 +349,17 @@ function AiPanel({ sessionId, allSessions }: Props) {
       <div className="ai-header">
         <span className="ai-title">Copilot</span>
         {allSessions.length > 1 && (
-          <select
-            className="ai-target"
+          <Select
+            size="sm"
+            align="right"
             title="Default target session"
-            value={target}
-            onChange={(e) => setTarget(Number(e.currentTarget.value))}
-          >
-            {allSessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.meta.name || `${s.meta.user}@${s.meta.host}`}
-              </option>
-            ))}
-          </select>
+            value={String(target)}
+            options={allSessions.map((s) => ({
+              value: String(s.id),
+              label: s.meta.name || `${s.meta.user}@${s.meta.host}`,
+            }))}
+            onChange={(v) => setTarget(Number(v))}
+          />
         )}
       </div>
 
