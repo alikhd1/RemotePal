@@ -8,7 +8,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
-import SnippetsPanel, { type SessionMeta } from "./SnippetsPanel";
+import SnippetsPanel, {
+  type LiveSession,
+  type SessionMeta,
+} from "./SnippetsPanel";
 import { getTermTheme, subscribeTheme } from "./themes";
 import "@xterm/xterm/css/xterm.css";
 
@@ -26,6 +29,7 @@ interface Props {
   showForwards: boolean;
   showSnippets: boolean;
   meta: SessionMeta;
+  allSessions: LiveSession[];
   onClose: () => void;
   onDisconnected: () => void;
   onReconnected: (newId: number) => void;
@@ -38,6 +42,7 @@ function TerminalPane({
   showForwards,
   showSnippets,
   meta,
+  allSessions,
   onClose,
   onDisconnected,
   onReconnected,
@@ -246,7 +251,9 @@ function TerminalPane({
           </button>
         </div>
       )}
-      {showSnippets && <SnippetsPanel sessionId={id} meta={meta} />}
+      {showSnippets && (
+        <SnippetsPanel sessionId={id} meta={meta} allSessions={allSessions} />
+      )}
       {showForwards && <ForwardsPanel sessionId={id} />}
       <div className="term-row">
         <div ref={containerRef} className="term-container" />

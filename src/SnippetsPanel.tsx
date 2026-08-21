@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import ContextMenu, { type MenuItem } from "./ContextMenu";
 
 export interface Snippet {
   name: string;
@@ -13,9 +14,15 @@ export interface SessionMeta {
   name: string;
 }
 
+export interface LiveSession {
+  id: number;
+  meta: SessionMeta;
+}
+
 interface Props {
   sessionId: number;
   meta: SessionMeta;
+  allSessions: LiveSession[];
 }
 
 function placeholders(command: string): string[] {
@@ -28,17 +35,23 @@ function substitute(command: string, values: Record<string, string>): string {
   );
 }
 
-function SnippetsPanel({ sessionId, meta }: Props) {
+function SnippetsPanel({ sessionId, meta, allSessions }: Props) {
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [editName, setEditName] = useState("");
   const [editCommand, setEditCommand] = useState("");
   const [confirmIdx, setConfirmIdx] = useState<number | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    idx: number;
+  } | null>(null);
   const [varPrompt, setVarPrompt] = useState<{
     command: string;
     vars: string[];
     values: Record<string, string>;
+    toAll: boolean;
   } | null>(null);
 
   async function refresh() {
@@ -53,41 +66,53 @@ function SnippetsPanel({ sessionId, meta }: Props) {
     refresh();
   }, []);
 
-  function builtinContext(): Record<string, string> {
+  function contextFor(m: SessionMeta): Record<string, string> {
     return {
-      host: meta.host,
-      user: meta.user,
-      port: String(meta.port),
-      name: meta.name,
+      host: m.host,
+      user: m.user,
+      port: String(m.port),
+      name: m.name,
     };
   }
 
-  async function doSend(command: string) {
+  async function doSend(
+    command: string,
+    custom: Record<string, string>,
+    toAll: boolean,
+  ) {
+    const targets = toAll ? allSessions : [{ id: sessionId, meta }];
     try {
-      await invoke("ssh_write", {
-        id: sessionId,
-        data: command.replace(/\r\n/g, "\n") + "\n",
-      });
+      for (const target of targets) {
+        // built-ins resolve per target session; prompted values shared
+        const resolved = substitute(command, {
+          ...contextFor(target.meta),
+          ...custom,
+        });
+        await invoke("ssh_write", {
+          id: target.id,
+          data: resolved.replace(/\r\n/g, "\n") + "\n",
+        });
+      }
     } catch (err) {
       setError(String(err));
     }
   }
 
-  function send(snippet: Snippet) {
+  function send(snippet: Snippet, toAll: boolean) {
     setConfirmIdx(null);
-    const context = builtinContext();
     const unknown = placeholders(snippet.command).filter(
-      (v) => !(v in context),
+      (v) => !(v in contextFor(meta)),
     );
     if (unknown.length) {
       setVarPrompt({
         command: snippet.command,
         vars: unknown,
         values: Object.fromEntries(unknown.map((v) => [v, ""])),
+        toAll,
       });
       return;
     }
-    doSend(substitute(snippet.command, context));
+    doSend(snippet.command, {}, toAll);
   }
 
   async function persist(next: Snippet[]) {
@@ -145,11 +170,18 @@ function SnippetsPanel({ sessionId, meta }: Props) {
       </div>
       <div className="forwards-list">
         {snippets.map((snippet, idx) => (
-          <div key={`${snippet.name}-${idx}`} className="forwards-row">
+          <div
+            key={`${snippet.name}-${idx}`}
+            className="forwards-row"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu({ x: e.clientX, y: e.clientY, idx });
+            }}
+          >
             <span
               className="snippet-desc"
-              title={`${snippet.command}\n\nClick to run in this terminal`}
-              onClick={() => send(snippet)}
+              title={`${snippet.command}\n\nClick to run in this terminal; right-click for more`}
+              onClick={() => send(snippet, false)}
             >
               <strong>{snippet.name}</strong>
               <span className="snippet-cmd">
@@ -158,9 +190,6 @@ function SnippetsPanel({ sessionId, meta }: Props) {
               </span>
             </span>
             <span>
-              <button type="button" title="Edit" onClick={() => startEdit(idx)}>
-                ✎
-              </button>
               <button
                 type="button"
                 title={confirmIdx === idx ? "Click again to delete" : "Delete"}
@@ -208,12 +237,7 @@ function SnippetsPanel({ sessionId, meta }: Props) {
           className="snippet-edit"
           onSubmit={(e) => {
             e.preventDefault();
-            doSend(
-              substitute(varPrompt.command, {
-                ...builtinContext(),
-                ...varPrompt.values,
-              }),
-            );
+            doSend(varPrompt.command, varPrompt.values, varPrompt.toAll);
             setVarPrompt(null);
           }}
         >
@@ -237,12 +261,38 @@ function SnippetsPanel({ sessionId, meta }: Props) {
               Cancel
             </button>
             <button type="submit" className="accent-btn">
-              Run
+              {varPrompt.toAll ? `Run in all (${allSessions.length})` : "Run"}
             </button>
           </div>
         </form>
       )}
       {error && <div className="files-error">{error}</div>}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={
+            [
+              {
+                label: "Send to this session",
+                onClick: () => send(snippets[ctxMenu.idx], false),
+              },
+              {
+                label: `Send to ALL sessions (${allSessions.length})`,
+                onClick: () => send(snippets[ctxMenu.idx], true),
+              },
+              { label: "", separator: true },
+              { label: "Edit…", onClick: () => startEdit(ctxMenu.idx) },
+              {
+                label: "Delete…",
+                danger: true,
+                onClick: () => setConfirmIdx(ctxMenu.idx),
+              },
+            ] satisfies MenuItem[]
+          }
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }

@@ -31,6 +31,11 @@ function App() {
   const [theme, setTheme] = useState(currentTheme());
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
+  const liveSessions = tabs.flatMap((t) =>
+    t.kind === "ssh" && !t.disconnected
+      ? [{ id: t.sshId, meta: t.meta }]
+      : [],
+  );
 
   function addSshTab(
     sshId: number,
@@ -212,6 +217,7 @@ function App() {
                 showForwards={forwardsOpen.has(t.key)}
                 showSnippets={snippetsOpen.has(t.key)}
                 meta={t.meta}
+                allSessions={liveSessions}
                 onClose={() => closeTab(t.key)}
                 onDisconnected={() => markDisconnected(t.key)}
                 onReconnected={(newId) => replaceSshTab(t.key, newId)}
