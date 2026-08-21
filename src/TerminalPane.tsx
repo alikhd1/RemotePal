@@ -5,30 +5,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
+import { getTermTheme, subscribeTheme } from "./themes";
 import "@xterm/xterm/css/xterm.css";
-
-// One Dark, carried over from the PyQt app
-const THEME = {
-  background: "#1e1e1e",
-  foreground: "#d4d4d4",
-  cursor: "#d4d4d4",
-  black: "#3f3f3f",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#d19a66",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#d4d4d4",
-  brightBlack: "#7f848e",
-  brightRed: "#e06c75",
-  brightGreen: "#98c379",
-  brightYellow: "#e5c07b",
-  brightBlue: "#61afef",
-  brightMagenta: "#c678dd",
-  brightCyan: "#56b6c2",
-  brightWhite: "#ffffff",
-};
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -65,7 +43,7 @@ function TerminalPane({
   useEffect(() => {
     const el = containerRef.current!;
     const term = new Terminal({
-      theme: THEME,
+      theme: getTermTheme(),
       fontFamily: "Consolas, 'Cascadia Mono', monospace",
       fontSize: 14,
       cursorBlink: true,
@@ -132,6 +110,13 @@ function TerminalPane({
     }
     termRef.current?.focus();
   }, [active]);
+
+  useEffect(() => {
+    return subscribeTheme(() => {
+      const term = termRef.current;
+      if (term) term.options.theme = getTermTheme();
+    });
+  }, []);
 
   return (
     <div className="term-pane">

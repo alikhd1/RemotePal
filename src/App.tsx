@@ -2,7 +2,10 @@ import { useState } from "react";
 import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import S3Browser from "./S3Browser";
+import { THEME_NAMES, applyTheme, currentTheme, initTheme } from "./themes";
 import "./App.css";
+
+initTheme();
 
 type Tab =
   | {
@@ -22,6 +25,7 @@ function App() {
   const [active, setActive] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState<Set<string>>(new Set());
   const [forwardsOpen, setForwardsOpen] = useState<Set<string>>(new Set());
+  const [theme, setTheme] = useState(currentTheme());
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
 
@@ -109,30 +113,47 @@ function App() {
         >
           +
         </button>
-        {activeTab?.kind === "ssh" && (
-          <>
-            <button
-              className={
-                "files-toggle" +
-                (forwardsOpen.has(activeTab.key) ? " active" : "")
-              }
-              title="Toggle port forwards"
-              onClick={() => toggleIn(setForwardsOpen, activeTab.key)}
-            >
-              Forwards
-            </button>
-            <button
-              className={
-                "files-toggle no-auto-margin" +
-                (filesOpen.has(activeTab.key) ? " active" : "")
-              }
-              title="Toggle file browser"
-              onClick={() => toggleIn(setFilesOpen, activeTab.key)}
-            >
-              Files
-            </button>
-          </>
-        )}
+        <div className="tab-bar-right">
+          {activeTab?.kind === "ssh" && (
+            <>
+              <button
+                className={
+                  "files-toggle" +
+                  (forwardsOpen.has(activeTab.key) ? " active" : "")
+                }
+                title="Toggle port forwards"
+                onClick={() => toggleIn(setForwardsOpen, activeTab.key)}
+              >
+                Forwards
+              </button>
+              <button
+                className={
+                  "files-toggle" +
+                  (filesOpen.has(activeTab.key) ? " active" : "")
+                }
+                title="Toggle file browser"
+                onClick={() => toggleIn(setFilesOpen, activeTab.key)}
+              >
+                Files
+              </button>
+            </>
+          )}
+          <select
+            className="theme-select"
+            title="Theme"
+            value={theme}
+            onChange={(e) => {
+              applyTheme(e.currentTarget.value);
+              setTheme(e.currentTarget.value);
+            }}
+          >
+            {THEME_NAMES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="panes">
         {tabs.map((t) => (

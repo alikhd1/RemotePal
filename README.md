@@ -30,7 +30,14 @@ Early. Working so far:
   and recursive prefix delete; works with AWS or any custom endpoint
   (MinIO, moto) via path-style addressing
 
-Not yet ported from the PyQt app: vault encryption/backup, folder sync, port forwards, jump hosts, themes.
+- Local port forwards (-L) per session with a Forwards strip in the tab bar
+- Jump hosts: saved connections can chain through other saved connections
+  (nested, cycle-safe), with per-hop host key verification
+- Push folder sync (missing/changed files, optional mirror deletes)
+- Themes: One Dark, Light, Solarized Dark, Nord — applied live to the app
+  and all open terminals, persisted across restarts
+
+Not yet ported from the PyQt app: vault encryption/backup, snippets.
 
 ## Development
 
