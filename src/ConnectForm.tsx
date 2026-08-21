@@ -212,6 +212,14 @@ function ConnectForm({ onConnected, onOpenS3 }: Props) {
         onClick: () => connectSaved(c, { openFiles: true }),
       },
     ];
+    items.push({
+      label: "Open in external terminal",
+      onClick: () => {
+        invoke("external_terminal", { id: c.id }).catch((err) =>
+          setError(errMessage(err)),
+        );
+      },
+    });
     items.push({ label: "Deploy public key…", onClick: () => deployKey(c) });
     if (c.hasPassword) {
       items.push({

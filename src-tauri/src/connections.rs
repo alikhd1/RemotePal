@@ -105,6 +105,7 @@ pub fn connection_save(
         None => list.push(conn.clone()),
     }
     save_all(&list)?;
+    let _ = crate::sshconfig::sync_ssh_config();
     Ok(conn)
 }
 
@@ -114,6 +115,7 @@ pub fn connection_delete(lock: State<'_, StoreLock>, id: String) -> Result<(), S
     let mut list = load_all()?;
     list.retain(|c| c.id != id);
     save_all(&list)?;
+    let _ = crate::sshconfig::sync_ssh_config();
     if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &id) {
         let _ = entry.delete_credential();
     }

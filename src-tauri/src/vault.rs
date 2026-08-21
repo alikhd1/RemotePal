@@ -549,7 +549,9 @@ pub fn vault_import(
 ) -> Result<ImportSummary, String> {
     let _guard = lock.0.lock().unwrap();
     let _s3_guard = s3_lock.0.lock().unwrap();
-    import_backup(&path, &password)
+    let summary = import_backup(&path, &password)?;
+    let _ = crate::sshconfig::sync_ssh_config();
+    Ok(summary)
 }
 
 #[cfg(test)]

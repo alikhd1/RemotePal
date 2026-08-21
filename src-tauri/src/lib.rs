@@ -4,6 +4,7 @@ pub mod keys;
 pub mod s3;
 pub mod sftp;
 pub mod ssh;
+pub mod sshconfig;
 pub mod vault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -28,6 +29,8 @@ pub fn run() {
             connections::connection_delete,
             connections::ssh_connect_saved,
             connections::deploy_key,
+            sshconfig::ssh_config_sync,
+            sshconfig::external_terminal,
             sftp::sftp_home,
             sftp::sftp_list,
             sftp::sftp_mkdir,
