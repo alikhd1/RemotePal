@@ -218,6 +218,7 @@ mod tests {
             user: "u".into(),
             key_path: String::new(),
             has_password: false,
+            jump: String::new(),
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();
