@@ -14,6 +14,33 @@ your data never touches anyone's cloud but your own.
 
 ## Features
 
+- **AI Copilot** — an assistant docked beside any terminal that understands
+  your servers and acts on them:
+  - **Runs commands, with your approval** — it proposes a shell command and
+    **nothing runs until you click Approve**; commands execute on a
+    dedicated exec channel (not your visible prompt) and their output feeds
+    back to the model
+  - **Reads your terminal** — pulls recent scrollback on demand to explain
+    an error or pick up where you left off
+  - **Multi-host** — target any open session, so "check disk on all three
+    boxes" works from one chat
+  - **Bring your own provider** — **Anthropic (Claude)**, **OpenAI**,
+    **DeepSeek**, **Google Gemini**, **xAI Grok**, **Groq**, **OpenRouter**,
+    **GapGPT**, and **Ollama** (local, no key) are built in, plus **any
+    OpenAI-compatible endpoint** you add yourself; switch provider from the
+    chat box
+  - **Readable answers** — replies render as Markdown with **tables**,
+    lists, and code blocks, and stream in live with a status indicator
+  - **Save as snippet** — keep any command the Copilot ran
+  - **Keys stay yours** — stored in the OS credential store, and the model
+    is told terminal output is untrusted; there is no auto-run bypass
+- **Local terminal** — open a shell on your own machine in a tab (ConPTY on
+  Windows, forkpty elsewhere), alongside your SSH sessions
+- **Compose bar** — write and edit a command under the terminal before
+  sending it, with autocompletion from your history, snippets, and common
+  commands, plus `↑`/`↓` history recall
+- **Server info strip** — a thin bar over each terminal showing the host's
+  CPU, memory, disk, network rates, load average, and uptime
 - **Tabbed terminals** — xterm.js (WebGL renderer) wired to a russh PTY
   channel; multiple concurrent sessions, live PTY resize, disconnect
   indicators, and hidden sessions stay connected
