@@ -37,12 +37,18 @@ function base64ToBytes(b64: string): Uint8Array {
 
 interface Props {
   id: number;
-  title: string;
-  onExit: () => void;
+  active: boolean;
+  onClose: () => void;
+  onDisconnected: () => void;
 }
 
-function TerminalPane({ id, title, onExit }: Props) {
+function TerminalPane({ id, active, onClose, onDisconnected }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  // keep the session-lifetime effect independent of callback identity
+  const onDisconnectedRef = useRef(onDisconnected);
+  onDisconnectedRef.current = onDisconnected;
   const [disconnected, setDisconnected] = useState(false);
 
   useEffect(() => {
@@ -57,6 +63,8 @@ function TerminalPane({ id, title, onExit }: Props) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+    termRef.current = term;
+    fitRef.current = fit;
     import("@xterm/addon-webgl").then(({ WebglAddon }) => {
       try {
         term.loadAddon(new WebglAddon());
@@ -81,10 +89,16 @@ function TerminalPane({ id, title, onExit }: Props) {
       listen<string>(`ssh-data-${id}`, (e) =>
         term.write(base64ToBytes(e.payload)),
       ),
-      listen(`ssh-closed-${id}`, () => setDisconnected(true)),
+      listen(`ssh-closed-${id}`, () => {
+        setDisconnected(true);
+        onDisconnectedRef.current();
+      }),
     ];
 
-    const observer = new ResizeObserver(() => fit.fit());
+    // hidden tabs have zero size; fitting then would corrupt the grid
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) fit.fit();
+    });
     observer.observe(el);
 
     return () => {
@@ -94,21 +108,26 @@ function TerminalPane({ id, title, onExit }: Props) {
       unlisteners.forEach((p) => p.then((un) => un()));
       invoke("ssh_disconnect", { id }).catch(() => {});
       term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!active) return;
+    const el = containerRef.current;
+    if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+      fitRef.current?.fit();
+    }
+    termRef.current?.focus();
+  }, [active]);
+
   return (
     <div className="term-pane">
-      <div className="term-header">
-        <span className="term-title">{title}</span>
-        <button className="term-close" onClick={onExit}>
-          Disconnect
-        </button>
-      </div>
       {disconnected && (
         <div className="term-banner">
           <span>Session disconnected.</span>
-          <button onClick={onExit}>Back</button>
+          <button onClick={onClose}>Close tab</button>
         </div>
       )}
       <div ref={containerRef} className="term-container" />

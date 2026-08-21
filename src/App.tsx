@@ -1,108 +1,95 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import ConnectForm from "./ConnectForm";
 import TerminalPane from "./TerminalPane";
 import "./App.css";
 
 interface SessionInfo {
   id: number;
   title: string;
+  disconnected: boolean;
 }
 
 function App() {
-  const [session, setSession] = useState<SessionInfo | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("22");
-  const [user, setUser] = useState("");
-  const [password, setPassword] = useState("");
-  const [keyPath, setKeyPath] = useState("");
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  // active session id; null shows the connect view ("+" tab)
+  const [active, setActive] = useState<number | null>(null);
 
-  async function connect(e: React.FormEvent) {
-    e.preventDefault();
-    setConnecting(true);
-    setError(null);
-    try {
-      const id = await invoke<number>("ssh_connect", {
-        host,
-        port: parseInt(port, 10) || 22,
-        user,
-        password: password || null,
-        keyPath: keyPath || null,
-      });
-      setSession({ id, title: `${user}@${host}` });
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setConnecting(false);
+  function addSession(id: number, title: string) {
+    setSessions((prev) => [...prev, { id, title, disconnected: false }]);
+    setActive(id);
+  }
+
+  function closeTab(id: number) {
+    const idx = sessions.findIndex((s) => s.id === id);
+    const next = sessions.filter((s) => s.id !== id);
+    setSessions(next);
+    if (active === id) {
+      setActive(next.length ? next[Math.min(idx, next.length - 1)].id : null);
     }
   }
 
-  if (session) {
-    return (
-      <TerminalPane
-        id={session.id}
-        title={session.title}
-        onExit={() => setSession(null)}
-      />
+  function markDisconnected(id: number) {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, disconnected: true } : s)),
     );
   }
 
   return (
-    <div className="connect-screen">
-      <form className="connect-form" onSubmit={connect}>
-        <h1>RemotePal</h1>
-        <label>
-          Host
-          <input
-            value={host}
-            onChange={(e) => setHost(e.currentTarget.value)}
-            placeholder="server.example.com"
-            autoFocus
-            required
-          />
-        </label>
-        <div className="field-row">
-          <label className="grow">
-            User
-            <input
-              value={user}
-              onChange={(e) => setUser(e.currentTarget.value)}
-              placeholder="root"
-              required
-            />
-          </label>
-          <label className="port">
-            Port
-            <input
-              value={port}
-              onChange={(e) => setPort(e.currentTarget.value)}
-              inputMode="numeric"
-            />
-          </label>
-        </div>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-            placeholder="(empty when using a key)"
-          />
-        </label>
-        <label>
-          Private key path
-          <input
-            value={keyPath}
-            onChange={(e) => setKeyPath(e.currentTarget.value)}
-            placeholder="C:\Users\me\.ssh\id_ed25519 (optional)"
-          />
-        </label>
-        <button type="submit" disabled={connecting}>
-          {connecting ? "Connecting…" : "Connect"}
+    <div className="app">
+      <div className="tab-bar">
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            className={
+              "tab" +
+              (active === s.id ? " active" : "") +
+              (s.disconnected ? " disconnected" : "")
+            }
+            onClick={() => setActive(s.id)}
+          >
+            <span className="tab-title">{s.title}</span>
+            <button
+              className="tab-close"
+              title="Close session"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeTab(s.id);
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          className={"tab-new" + (active === null ? " active" : "")}
+          title="New session"
+          onClick={() => setActive(null)}
+        >
+          +
         </button>
-        {error && <div className="connect-error">{error}</div>}
-      </form>
+      </div>
+      <div className="panes">
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            className="pane-holder"
+            style={{ display: active === s.id ? undefined : "none" }}
+          >
+            <TerminalPane
+              id={s.id}
+              active={active === s.id}
+              onClose={() => closeTab(s.id)}
+              onDisconnected={() => markDisconnected(s.id)}
+            />
+          </div>
+        ))}
+        <div
+          className="pane-holder"
+          style={{ display: active === null ? undefined : "none" }}
+        >
+          <ConnectForm onConnected={addSession} />
+        </div>
+      </div>
     </div>
   );
 }

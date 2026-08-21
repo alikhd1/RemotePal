@@ -9,8 +9,10 @@ Early. Working so far:
 - Connect form (host / port / user, password or private-key auth)
 - Interactive terminal: xterm.js (WebGL renderer) wired to a russh PTY channel
 - Live PTY resize, disconnect banner
+- Session tabs: multiple concurrent connections, "+" tab for new sessions,
+  disconnect indicator; hidden sessions stay connected
 
-Not yet ported from the PyQt app: vault, saved connections, SFTP/S3 browsers, folder sync, port forwards, themes, tabs.
+Not yet ported from the PyQt app: vault, saved connections, SFTP/S3 browsers, folder sync, port forwards, themes.
 
 **Known gap:** host keys are currently accepted blindly (`check_server_key` returns true). Needs known_hosts verification before real use.
 
