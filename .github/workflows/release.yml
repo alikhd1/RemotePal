@@ -54,5 +54,5 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "RemotePal ${{ github.ref_name }}"
-          releaseDraft: true
+          releaseDraft: false
           args: ${{ matrix.args }}
