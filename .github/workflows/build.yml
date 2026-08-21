@@ -2,10 +2,16 @@ name: Build
 
 # Manual cross-platform build: Actions tab -> Build -> Run workflow.
 # Produces unsigned installers for Windows, macOS, and Linux as
-# downloadable workflow artifacts, without cutting a release.
+# downloadable workflow artifacts. Optionally fill in "release-tag"
+# to also draft a GitHub release with the installers attached.
 
 on:
   workflow_dispatch:
+    inputs:
+      release-tag:
+        description: "Draft a release under this tag (e.g. v0.1.0); leave empty for artifacts only"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -14,6 +20,8 @@ jobs:
       matrix:
         platform: [windows-latest, macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -26,7 +34,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -38,7 +45,18 @@ jobs:
         run: npm ci
 
       - name: Build installers
+        if: inputs.release-tag == ''
         uses: tauri-apps/tauri-action@v0
+
+      - name: Build installers and draft release
+        if: inputs.release-tag != ''
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ inputs.release-tag }}
+          releaseName: "RemotePal ${{ inputs.release-tag }}"
+          releaseDraft: true
 
       - uses: actions/upload-artifact@v7
         with:
