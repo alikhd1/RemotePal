@@ -117,6 +117,231 @@ struct EditEvent {
     message: Option<String>,
 }
 
+// ------------------------------------------------------- folder sync
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncSummary {
+    uploaded: usize,
+    deleted: usize,
+    skipped: usize,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncProgress<'a> {
+    transfer_id: &'a str,
+    current: &'a str,
+    index: usize,
+    total: usize,
+}
+
+type FileMap = std::collections::HashMap<String, (u64, i64)>;
+
+fn collect_local(root: &std::path::Path) -> Result<FileMap, String> {
+    let mut files = FileMap::new();
+    let mut stack = vec![(root.to_path_buf(), String::new())];
+    while let Some((dir, rel)) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            let meta = entry.metadata().map_err(|e| e.to_string())?;
+            if meta.is_dir() {
+                stack.push((entry.path(), child_rel));
+            } else if meta.is_file() {
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                files.insert(child_rel, (meta.len(), mtime));
+            }
+        }
+    }
+    Ok(files)
+}
+
+async fn collect_remote(
+    sftp: &SftpSession,
+    root: &str,
+) -> Result<(FileMap, Vec<String>), String> {
+    let mut files = FileMap::new();
+    let mut dirs = Vec::new();
+    let mut stack = vec![(root.to_string(), String::new())];
+    while let Some((rpath, rel)) = stack.pop() {
+        let entries = sftp.read_dir(&rpath).await.map_err(|e| e.to_string())?;
+        for entry in entries {
+            let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            let child_path = format!("{}/{}", rpath.trim_end_matches('/'), name);
+            let meta = entry.metadata();
+            if meta.is_dir() {
+                dirs.push(child_rel.clone());
+                stack.push((child_path, child_rel));
+            } else {
+                files.insert(
+                    child_rel,
+                    (meta.size.unwrap_or(0), meta.mtime.unwrap_or(0) as i64),
+                );
+            }
+        }
+    }
+    Ok((files, dirs))
+}
+
+/// Relative paths needing upload: missing remotely, size differs, or
+/// local mtime newer (+1s fudge: filesystems differ in granularity).
+fn plan_copies(local: &FileMap, remote: &FileMap) -> Vec<String> {
+    let mut to_copy: Vec<String> = local
+        .iter()
+        .filter(|(rel, (size, mtime))| match remote.get(*rel) {
+            None => true,
+            Some((rsize, rmtime)) => size != rsize || *mtime > rmtime + 1,
+        })
+        .map(|(rel, _)| rel.clone())
+        .collect();
+    to_copy.sort();
+    to_copy
+}
+
+/// Push-sync a local directory into the remote one: upload missing and
+/// changed files (size differs, or local mtime newer with a +1s
+/// fudge), optionally delete remote extras (mirror).
+#[tauri::command]
+pub async fn sftp_sync(
+    app: AppHandle,
+    state: State<'_, SshSessions>,
+    id: u32,
+    local_dir: String,
+    remote_dir: String,
+    delete_extra: bool,
+    transfer_id: String,
+) -> Result<SyncSummary, String> {
+    let sftp = sftp_for(&state, id).await?;
+    let local_root = std::path::PathBuf::from(&local_dir);
+    if !local_root.is_dir() {
+        return Err(format!("{local_dir} is not a directory"));
+    }
+    let local = collect_local(&local_root)?;
+    let (remote, remote_dirs) = collect_remote(&sftp, &remote_dir).await?;
+
+    let to_copy = plan_copies(&local, &remote);
+
+    let total = to_copy.len();
+    let mut created: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (index, rel) in to_copy.iter().enumerate() {
+        let _ = app.emit(
+            "sync-progress",
+            SyncProgress {
+                transfer_id: &transfer_id,
+                current: rel,
+                index,
+                total,
+            },
+        );
+        // ensure parent directories exist remotely
+        let parts: Vec<&str> = rel.split('/').collect();
+        let mut dir = remote_dir.trim_end_matches('/').to_string();
+        for part in &parts[..parts.len() - 1] {
+            dir = format!("{dir}/{part}");
+            if created.insert(dir.clone()) {
+                let _ = sftp.create_dir(&dir).await; // may already exist
+            }
+        }
+        let local_path = local_root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), rel);
+        copy_local_to_remote(&sftp, &local_path, &remote_path)
+            .await
+            .map_err(|e| format!("{rel}: {e}"))?;
+    }
+
+    let mut deleted = 0;
+    if delete_extra {
+        let mut extra_files: Vec<&String> =
+            remote.keys().filter(|rel| !local.contains_key(*rel)).collect();
+        extra_files.sort();
+        for rel in extra_files {
+            let path = format!("{}/{}", remote_dir.trim_end_matches('/'), rel);
+            sftp.remove_file(&path)
+                .await
+                .map_err(|e| format!("delete {rel}: {e}"))?;
+            deleted += 1;
+        }
+        // extra dirs, deepest first
+        let local_dirs: std::collections::HashSet<String> = local
+            .keys()
+            .flat_map(|rel| {
+                let parts: Vec<&str> = rel.split('/').collect();
+                (1..parts.len())
+                    .map(|i| parts[..i].join("/"))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let mut extra_dirs: Vec<&String> = remote_dirs
+            .iter()
+            .filter(|d| !local_dirs.contains(*d))
+            .collect();
+        extra_dirs.sort_by_key(|d| std::cmp::Reverse(d.matches('/').count()));
+        for rel in extra_dirs {
+            let path = format!("{}/{}", remote_dir.trim_end_matches('/'), rel);
+            let _ = sftp.remove_dir(&path).await; // only removes if empty
+        }
+    }
+
+    let _ = app.emit(
+        "sync-progress",
+        SyncProgress {
+            transfer_id: &transfer_id,
+            current: "done",
+            index: total,
+            total,
+        },
+    );
+    Ok(SyncSummary {
+        uploaded: total,
+        deleted,
+        skipped: local.len() - total,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_copies_missing_changed_and_fudge() {
+        let mut local = FileMap::new();
+        local.insert("same.txt".into(), (10, 100));
+        local.insert("bigger.txt".into(), (20, 100));
+        local.insert("newer.txt".into(), (10, 200));
+        local.insert("missing.txt".into(), (5, 100));
+        local.insert("within-fudge.txt".into(), (10, 101));
+        let mut remote = FileMap::new();
+        remote.insert("same.txt".into(), (10, 100));
+        remote.insert("bigger.txt".into(), (10, 100));
+        remote.insert("newer.txt".into(), (10, 100));
+        remote.insert("within-fudge.txt".into(), (10, 100));
+        remote.insert("extra.txt".into(), (1, 1));
+        assert_eq!(
+            plan_copies(&local, &remote),
+            vec!["bigger.txt", "missing.txt", "newer.txt"]
+        );
+    }
+}
+
 /// Download the file to a temp dir, open it in the default local app,
 /// and re-upload (debounced) every time it changes on disk.
 #[tauri::command]

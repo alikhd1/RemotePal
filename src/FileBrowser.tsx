@@ -75,6 +75,7 @@ function FileBrowser({ sessionId, active }: Props) {
   const [transfer, setTransfer] = useState<TransferState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [dropping, setDropping] = useState(false);
+  const [mirror, setMirror] = useState(false);
   const transferIdRef = useRef<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
   // the drag-drop subscription is created once; these mirror current state
@@ -133,6 +134,25 @@ function FileBrowser({ sessionId, active }: Props) {
           }
         },
       ),
+      listen<{
+        transferId: string;
+        current: string;
+        index: number;
+        total: number;
+      }>("sync-progress", (e) => {
+        if (e.payload.transferId === transferIdRef.current) {
+          setTransfer((t) =>
+            t
+              ? {
+                  ...t,
+                  label: `⇅ ${e.payload.current}`,
+                  done: e.payload.index,
+                  total: e.payload.total,
+                }
+              : t,
+          );
+        }
+      }),
       listen<{ sessionId: number; name: string }>("sftp-edit-uploaded", (e) => {
         if (e.payload.sessionId === sessionId) {
           flashNotice(`Saved ${e.payload.name} — uploaded`);
@@ -413,6 +433,61 @@ function FileBrowser({ sessionId, active }: Props) {
         >
           Rename
         </button>
+        <button
+          type="button"
+          title={
+            mirror
+              ? "Push local folder here, deleting remote extras"
+              : "Push local folder into this directory"
+          }
+          onClick={async () => {
+            if (!path || transfer) return;
+            const dir = await openDialog({
+              directory: true,
+              title: "Sync local folder into current remote directory",
+            });
+            if (typeof dir !== "string") return;
+            const tid = `sync${Date.now()}`;
+            transferIdRef.current = tid;
+            setTransfer({ label: "⇅ comparing…", done: 0, total: 0 });
+            setError(null);
+            try {
+              const summary = await invoke<{
+                uploaded: number;
+                deleted: number;
+                skipped: number;
+              }>("sftp_sync", {
+                id: sessionId,
+                localDir: dir,
+                remoteDir: path,
+                deleteExtra: mirror,
+                transferId: tid,
+              });
+              flashNotice(
+                `Sync done: ${summary.uploaded} uploaded, ` +
+                  `${summary.skipped} unchanged` +
+                  (mirror ? `, ${summary.deleted} deleted` : ""),
+              );
+              load(path);
+            } catch (err) {
+              setError(String(err));
+            } finally {
+              transferIdRef.current = null;
+              setTransfer(null);
+            }
+          }}
+          disabled={!path || !!transfer}
+        >
+          Sync
+        </button>
+        <label className="files-mirror" title="Delete remote files that don't exist locally">
+          <input
+            type="checkbox"
+            checked={mirror}
+            onChange={(e) => setMirror(e.currentTarget.checked)}
+          />
+          mirror
+        </label>
         <button
           type="button"
           className={confirmDelete ? "files-delete confirming" : "files-delete"}

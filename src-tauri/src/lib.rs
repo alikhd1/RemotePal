@@ -32,6 +32,7 @@ pub fn run() {
             sftp::sftp_download,
             sftp::sftp_upload,
             sftp::sftp_edit,
+            sftp::sftp_sync,
             s3::s3_list_storages,
             s3::s3_save_storage,
             s3::s3_delete_storage,

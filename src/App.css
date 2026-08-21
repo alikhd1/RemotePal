@@ -752,6 +752,16 @@ body,
   border-color: var(--danger);
 }
 
+.files-mirror {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
 .files-inputrow {
   display: flex;
   gap: 4px;
