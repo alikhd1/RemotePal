@@ -20,6 +20,7 @@ pub fn run() {
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_disconnect,
+            ssh::ssh_reconnect,
             ssh::trust_host_key,
             connections::connections_list,
             connections::connection_save,

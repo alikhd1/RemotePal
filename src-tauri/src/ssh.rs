@@ -84,6 +84,10 @@ pub struct SessionMaps {
     pub senders: Mutex<HashMap<u32, mpsc::UnboundedSender<TermCmd>>>,
     pub handles: Mutex<HashMap<u32, Arc<SshHandle>>>,
     pub sftp: Mutex<HashMap<u32, Arc<russh_sftp::client::SftpSession>>>,
+    /// connect specs per session, kept for Reconnect (dropped on close
+    /// only if the session ended by explicit disconnect, so a dead
+    /// session's specs survive for the banner's Reconnect button)
+    pub specs: Mutex<HashMap<u32, Vec<ConnectSpec>>>,
 }
 
 #[derive(Default)]
@@ -363,6 +367,12 @@ pub async fn start_session(
         .lock()
         .unwrap()
         .insert(id, Arc::clone(&target));
+    sessions
+        .maps
+        .specs
+        .lock()
+        .unwrap()
+        .insert(id, specs.to_vec());
     let maps = Arc::clone(&sessions.maps);
 
     tauri::async_runtime::spawn(async move {
@@ -454,7 +464,28 @@ pub fn ssh_resize(
 pub fn ssh_disconnect(state: State<'_, SshSessions>, id: u32) -> Result<(), String> {
     // ignore unknown ids: the pump may already have cleaned up after itself
     let _ = send_cmd(&state, id, TermCmd::Close);
+    // explicit disconnect: nobody will reconnect this session
+    state.maps.specs.lock().unwrap().remove(&id);
     Ok(())
+}
+
+/// Start a fresh session with the same chain a (possibly dead) session
+/// was opened with. The old session's specs are consumed.
+#[tauri::command]
+pub async fn ssh_reconnect(
+    app: AppHandle,
+    state: State<'_, SshSessions>,
+    id: u32,
+) -> Result<u32, ConnectError> {
+    let specs = state
+        .maps
+        .specs
+        .lock()
+        .unwrap()
+        .remove(&id)
+        .ok_or_else(|| ConnectError::other("nothing to reconnect"))?;
+    let _ = send_cmd(&state, id, TermCmd::Close);
+    start_session(app, &state, &specs).await
 }
 
 #[cfg(test)]

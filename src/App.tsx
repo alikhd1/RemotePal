@@ -69,6 +69,27 @@ function App() {
     }
   }
 
+  function replaceSshTab(oldKey: string, newId: number) {
+    const newKey = `ssh-${newId}`;
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.key === oldKey && t.kind === "ssh"
+          ? { ...t, sshId: newId, key: newKey, disconnected: false }
+          : t,
+      ),
+    );
+    for (const setter of [setFilesOpen, setForwardsOpen, setSnippetsOpen]) {
+      setter((prev) => {
+        if (!prev.has(oldKey)) return prev;
+        const next = new Set(prev);
+        next.delete(oldKey);
+        next.add(newKey);
+        return next;
+      });
+    }
+    setActive((a) => (a === oldKey ? newKey : a));
+  }
+
   function markDisconnected(key: string) {
     setTabs((prev) =>
       prev.map((t) =>
@@ -193,6 +214,7 @@ function App() {
                 meta={t.meta}
                 onClose={() => closeTab(t.key)}
                 onDisconnected={() => markDisconnected(t.key)}
+                onReconnected={(newId) => replaceSshTab(t.key, newId)}
               />
             ) : (
               <S3Browser storageId={t.storageId} active={active === t.key} />

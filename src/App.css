@@ -1051,6 +1051,37 @@ body,
   word-break: break-word;
 }
 
+.term-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.term-search input {
+  flex: 1;
+  max-width: 420px;
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+}
+
+.term-search button {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
 .term-banner {
   display: flex;
   align-items: center;
