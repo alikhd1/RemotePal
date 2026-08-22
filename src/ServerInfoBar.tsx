@@ -8,7 +8,15 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SessionMeta } from "./SnippetsPanel";
-import { X } from "lucide-react";
+import {
+  Activity,
+  Clock,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  X,
+} from "lucide-react";
 
 interface Stats {
   cores: number;
@@ -123,7 +131,7 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
 
       {cpuPct !== null && (
         <span className="si-item" title="CPU usage">
-          <span className="si-label">CPU</span>
+          <Cpu size={12} className="si-icon" />
           {Math.round(cpuPct)}%
           {stats && stats.cores > 0 && (
             <span className="si-dim">({stats.cores}C)</span>
@@ -136,7 +144,7 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
           className="si-item"
           title={`Memory: ${fmtBytes(stats.memTotalKb - stats.memAvailKb)} of ${fmtBytes(stats.memTotalKb)} used`}
         >
-          <span className="si-label">MEM</span>
+          <MemoryStick size={12} className="si-icon" />
           {fmtBytes(stats.memTotalKb - stats.memAvailKb)}/
           {fmtBytes(stats.memTotalKb)}
           <span className="si-dim">({Math.round(memUsedPct)}%)</span>
@@ -148,7 +156,7 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
           className="si-item"
           title={`Disk /: ${fmtBytes(stats.diskUsedKb)} of ${fmtBytes(stats.diskTotalKb)} used`}
         >
-          <span className="si-label">DISK</span>
+          <HardDrive size={12} className="si-icon" />
           {fmtBytes(stats.diskTotalKb)}
           <span className="si-dim">({Math.round(diskPct)}%)</span>
         </span>
@@ -156,21 +164,21 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
 
       {rates && (
         <span className="si-item" title="Network throughput (all interfaces)">
-          <span className="si-label">NET</span>↓{fmtRate(rates.rx)} ↑
+          <Network size={12} className="si-icon" />↓{fmtRate(rates.rx)} ↑
           {fmtRate(rates.tx)}
         </span>
       )}
 
       {stats && stats.load1 > 0 && (
-        <span className="si-item" title="1-minute load average">
-          <span className="si-label">LOAD</span>
+        <span className="si-item" title="Load average (1 minute)">
+          <Activity size={12} className="si-icon" />
           {stats.load1.toFixed(2)}
         </span>
       )}
 
       {stats && stats.uptimeSecs > 0 && (
-        <span className="si-item" title="Uptime">
-          <span className="si-label">UP</span>
+        <span className="si-item" title="Uptime since last boot">
+          <Clock size={12} className="si-icon" />
           {fmtUptime(stats.uptimeSecs)}
         </span>
       )}

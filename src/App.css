@@ -2285,9 +2285,10 @@ body,
   white-space: nowrap;
 }
 
-.si-label {
-  font-size: 10px;
-  letter-spacing: 0.4px;
+/* icons stand in for the CPU/MEM/DISK labels; each item keeps a title
+   so hovering still says which metric it is */
+.si-icon {
+  flex-shrink: 0;
   color: var(--fg-dim);
 }
 
