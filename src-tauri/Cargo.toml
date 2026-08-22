@@ -1,6 +1,6 @@
 [package]
 name = "remotepal"
-version = "0.3.2"
+version = "0.3.3"
 description = "RemotePal SSH manager"
 authors = ["Ali khandi <alikhandi@gmail.com>"]
 license = "MIT"
