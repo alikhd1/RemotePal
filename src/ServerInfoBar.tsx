@@ -128,10 +128,21 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
     <div className="server-info">
       <span
         className="si-host"
-        title={`${meta.user}@${meta.host}:${meta.port} — ${osLabel(meta.os)}`}
+        title={`${meta.name ? `${meta.name} — ` : ""}${meta.user}@${meta.host}:${meta.port} — ${osLabel(meta.os)}`}
       >
         <OsIcon os={meta.os} size={14} />
-        {meta.user}@{meta.host}
+        {meta.name && meta.name !== meta.host ? (
+          <>
+            <span className="si-name">{meta.name}</span>
+            <span className="si-dim">
+              {meta.user}@{meta.host}
+            </span>
+          </>
+        ) : (
+          <>
+            {meta.user}@{meta.host}
+          </>
+        )}
       </span>
 
       {cpuPct !== null && (

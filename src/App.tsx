@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
@@ -66,6 +66,14 @@ function App() {
   // which direction is mid-split; duplicating a session opens a whole new
   // SSH connection, so the buttons stay busy until it lands
   const [splitting, setSplitting] = useState<SplitDir | null>(null);
+  // this machine's OS slug, so local tabs carry its logo like SSH tabs do
+  const [localOs, setLocalOs] = useState<string | undefined>();
+
+  useEffect(() => {
+    invoke<{ os: string }>("local_info")
+      .then((i) => setLocalOs(i.os))
+      .catch(() => {});
+  }, []);
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
   const liveSessions = tabs.flatMap((t) =>
@@ -268,7 +276,7 @@ function App() {
               {t.kind === "ssh" ? (
                 <OsIcon os={leaves(t.root)[0]?.meta.os} size={16} />
               ) : t.kind === "local" ? (
-                <SquareTerminal size={13} className="tab-kind-icon" />
+                <OsIcon os={localOs} size={16} />
               ) : (
                 <Cloud size={13} className="tab-kind-icon" />
               )}

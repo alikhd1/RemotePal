@@ -2290,6 +2290,16 @@ body,
   gap: 5px;
 }
 
+.compose-toggle {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
 /* thin vitals strip above the terminal */
 .server-info {
   display: flex;
@@ -2331,6 +2341,11 @@ body,
 
 .si-dim {
   color: var(--fg-dim);
+}
+
+/* the saved connection's name, ahead of the dimmer user@host */
+.si-name {
+  color: var(--fg);
 }
 
 /* close this pane; only rendered when the tab has more than one */

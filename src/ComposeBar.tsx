@@ -25,6 +25,19 @@ interface Suggestion {
 
 const MAX_SUGGESTIONS = 8;
 
+const SUGGEST_KEY = "remotepal-compose-suggest";
+
+function suggestEnabled(): boolean {
+  return localStorage.getItem(SUGGEST_KEY) !== "0";
+}
+
+/// Commands whose next argument is a path worth completing.
+const PATH_COMMANDS = new Set([
+  "cd", "ls", "ll", "cat", "less", "more", "tail", "head", "vi", "vim",
+  "nano", "rm", "cp", "mv", "touch", "mkdir", "rmdir", "chmod", "chown",
+  "du", "stat", "source", "tar", "unzip", "zip", "scp", "rsync",
+]);
+
 const COMMON_COMMANDS = [
   "df -h",
   "du -sh *",
@@ -50,6 +63,9 @@ function ComposeBar({ sessionId, disabled }: Props) {
   const [histIdx, setHistIdx] = useState(-1);
   const [snippets, setSnippets] = useState<string[]>([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestOn, setSuggestOn] = useState(suggestEnabled());
+  /// remote directory entries for the path currently being typed
+  const [pathHits, setPathHits] = useState<Suggestion[]>([]);
   const [highlight, setHighlight] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -67,7 +83,66 @@ function ComposeBar({ sessionId, disabled }: Props) {
   // suggestions match the last line, so a multi-line draft still completes
   const lastLine = text.slice(text.lastIndexOf("\n") + 1);
 
+  // The token being typed and the command in front of it decide whether a
+  // remote directory listing is worth fetching.
+  const words = lastLine.split(/\s+/);
+  const token = words[words.length - 1] ?? "";
+  const verb = words.length > 1 ? words[0] : "";
+  const wantsPath =
+    suggestOn &&
+    (token.startsWith("/") ||
+      token.startsWith("./") ||
+      token.startsWith("~/") ||
+      (words.length > 1 && PATH_COMMANDS.has(verb)));
+
+  useEffect(() => {
+    if (!open || !wantsPath) {
+      setPathHits([]);
+      return;
+    }
+    // list the directory the token points into, then filter by its tail
+    const cut = token.lastIndexOf("/");
+    const dir = cut < 0 ? "." : token.slice(0, cut + 1) || "/";
+    const tail = token.slice(cut + 1).toLowerCase();
+    const head = lastLine.slice(0, lastLine.length - token.length);
+    let cancelled = false;
+    // debounce: typing a path should not list on every keystroke
+    const timer = window.setTimeout(() => {
+      invoke<{ name: string; isDir: boolean }[]>("sftp_list", {
+        id: sessionId,
+        path: dir,
+      })
+        .then((list) => {
+          if (cancelled) return;
+          setPathHits(
+            list
+              .filter((e) => e.name.toLowerCase().startsWith(tail))
+              .slice(0, MAX_SUGGESTIONS)
+              .map((e) => ({
+                value:
+                  head +
+                  (dir === "." ? "" : dir) +
+                  e.name +
+                  (e.isDir ? "/" : ""),
+                source: e.isDir ? "folder" : "file",
+              })),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setPathHits([]);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, wantsPath, token, sessionId, lastLine]);
+
+
   const suggestions = useMemo<Suggestion[]>(() => {
+    if (!suggestOn) return [];
+    // a path being typed is a better answer than anything from history
+    if (pathHits.length > 0) return pathHits;
     const q = lastLine.trim().toLowerCase();
     if (!q) return [];
     const seen = new Set<string>();
@@ -92,7 +167,7 @@ function ComposeBar({ sessionId, disabled }: Props) {
         return ap - bp;
       })
       .slice(0, MAX_SUGGESTIONS);
-  }, [lastLine, snippets]);
+  }, [lastLine, snippets, suggestOn, pathHits]);
 
   const showSuggest = suggestOpen && suggestions.length > 0;
 
@@ -235,6 +310,19 @@ function ComposeBar({ sessionId, disabled }: Props) {
         />
       </div>
       <div className="compose-actions">
+        <label className="compose-toggle" title="Suggest completions as you type">
+          <input
+            type="checkbox"
+            checked={suggestOn}
+            onChange={(e) => {
+              const on = e.currentTarget.checked;
+              localStorage.setItem(SUGGEST_KEY, on ? "1" : "0");
+              setSuggestOn(on);
+              if (!on) setSuggestOpen(false);
+            }}
+          />
+          suggest
+        </label>
         <button
           type="button"
           className="link-btn"
