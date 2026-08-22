@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 struct LocalSession {
@@ -166,6 +167,53 @@ pub fn local_close(state: State<'_, LocalSessions>, id: u32) -> Result<(), Strin
         let _ = session.child.kill();
     }
     Ok(())
+}
+
+/// What this machine is, for the local terminal's info strip: an OS slug
+/// the frontend has an icon for, plus who and where we are running.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalInfo {
+    pub os: String,
+    pub user: String,
+    pub host: String,
+    pub shell: String,
+}
+
+#[tauri::command]
+pub fn local_info() -> LocalInfo {
+    let os = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "freebsd") {
+        "freebsd"
+    } else {
+        "linux"
+    };
+
+    let user = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "local".to_string());
+    let host = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "this device".to_string());
+
+    // just the program name; the full path is noise in a one-line strip
+    let full = default_shell();
+    let shell = full
+        .rsplit(|c| c == '/' || c == std::path::MAIN_SEPARATOR)
+        .next()
+        .unwrap_or(&full)
+        .trim_end_matches(".exe")
+        .to_string();
+
+    LocalInfo {
+        os: os.to_string(),
+        user,
+        host,
+        shell,
+    }
 }
 
 /// Shells worth offering in the UI; the first entry is the default.

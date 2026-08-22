@@ -11,6 +11,8 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getTermTheme, subscribeTheme } from "./themes";
+import OsIcon, { osLabel } from "./osIcons";
+import { TerminalSquare } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -18,6 +20,13 @@ function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+interface LocalInfo {
+  os: string;
+  user: string;
+  host: string;
+  shell: string;
 }
 
 interface Props {
@@ -32,6 +41,7 @@ function LocalTerminal({ active, shell, onExit }: Props) {
   const fitRef = useRef<FitAddon | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exited, setExited] = useState(false);
+  const [info, setInfo] = useState<LocalInfo | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
 
@@ -135,6 +145,10 @@ function LocalTerminal({ active, shell, onExit }: Props) {
   }, [active]);
 
   useEffect(() => {
+    invoke<LocalInfo>("local_info").then(setInfo).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     return subscribeTheme(() => {
       const term = termRef.current;
       if (term) term.options.theme = getTermTheme();
@@ -143,6 +157,22 @@ function LocalTerminal({ active, shell, onExit }: Props) {
 
   return (
     <div className="term-pane">
+      {info && (
+        <div className="server-info">
+          <span
+            className="si-host"
+            title={`${info.user}@${info.host} — ${osLabel(info.os)}`}
+          >
+            <OsIcon os={info.os} size={14} />
+            {info.user}@{info.host}
+          </span>
+          <span className="si-item" title="Shell">
+            <TerminalSquare size={12} className="si-icon" />
+            {info.shell}
+          </span>
+          <span className="si-dim">local</span>
+        </div>
+      )}
       {exited && <div className="term-banner">Shell exited.</div>}
       {error && <div className="files-error">{error}</div>}
       <div className="term-row">

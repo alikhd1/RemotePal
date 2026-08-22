@@ -92,6 +92,7 @@ pub fn run() {
             local::local_resize,
             local::local_close,
             local::local_shells,
+            local::local_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
