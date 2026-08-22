@@ -1936,6 +1936,45 @@ body,
   cursor: pointer;
 }
 
+/* offer to fill in a saved password when auto-answering is off */
+.pw-ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--panel);
+  border-bottom: 1px solid var(--accent);
+}
+
+.pw-ask span {
+  margin-right: auto;
+}
+
+.pw-ask button {
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.pw-ask .accent-btn {
+  color: #1e1e1e;
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pw-ask .link-btn {
+  border: none;
+  color: var(--fg-dim);
+}
+
 /* command composer docked under the terminal */
 .compose-collapsed {
   display: flex;

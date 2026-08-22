@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { KeyRound } from "lucide-react";
 import FileBrowser from "./FileBrowser";
 import ForwardsPanel from "./ForwardsPanel";
 import AiPanel from "./AiPanel";
@@ -108,6 +109,12 @@ function TerminalPane({
    *  would otherwise loop forever against a re-asking prompt */
   const pwTriesRef = useRef(0);
   const pwUntilRef = useRef(0);
+  /** with auto off we offer to fill it in instead; these mirror the
+   *  dialog state for the listener, which closes over refs only */
+  const [pwAsk, setPwAsk] = useState(false);
+  const pwAskRef = useRef(false);
+  pwAskRef.current = pwAsk;
+  const pwNeverAskRef = useRef(false);
 
   useEffect(() => {
     const el = containerRef.current!;
@@ -190,7 +197,9 @@ function TerminalPane({
     const decoder = new TextDecoder();
     function maybeAnswerPassword(bytes: Uint8Array) {
       const connId = savedConnIdRef.current;
-      if (!autoPasswordRef.current || !connId) return;
+      // nothing to offer without a saved password to send
+      if (!connId) return;
+      if (!autoPasswordRef.current && pwNeverAskRef.current) return;
 
       tailRef.current = (
         tailRef.current + stripAnsi(decoder.decode(bytes, { stream: true }))
@@ -199,6 +208,15 @@ function TerminalPane({
       const line = tailRef.current.split("\n").pop() ?? "";
       if (!PASSWORD_PROMPT.test(line)) return;
       if (Date.now() < pwUntilRef.current) return; // still settling
+
+      // auto off: offer it rather than typing it unasked
+      if (!autoPasswordRef.current) {
+        if (!pwAskRef.current) {
+          tailRef.current = "";
+          setPwAsk(true);
+        }
+        return;
+      }
 
       if (pwTriesRef.current >= 2) {
         setPwNotice(
@@ -287,6 +305,16 @@ function TerminalPane({
     }
   }
 
+  /// Fill in the saved password for the prompt the remote is sitting at.
+  function sendSavedPassword() {
+    setPwAsk(false);
+    pwUntilRef.current = Date.now() + 1500;
+    if (!savedConnId) return;
+    invoke("ssh_send_saved_password", { id, connId: savedConnId }).catch((err) =>
+      setPwNotice(String(err)),
+    );
+  }
+
   function findInTerm(backward: boolean) {
     if (!searchQuery) return;
     if (backward) searchRef.current?.findPrevious(searchQuery);
@@ -348,6 +376,29 @@ function TerminalPane({
             }}
           >
             ×
+          </button>
+        </div>
+      )}
+      {pwAsk && (
+        <div className="pw-ask">
+          <KeyRound size={14} />
+          <span>Send the saved password for this connection?</span>
+          <button type="button" className="accent-btn" onClick={sendSavedPassword}>
+            Send
+          </button>
+          <button type="button" onClick={() => setPwAsk(false)}>
+            Not now
+          </button>
+          <button
+            type="button"
+            className="link-btn"
+            title="Stop offering this for this session"
+            onClick={() => {
+              pwNeverAskRef.current = true;
+              setPwAsk(false);
+            }}
+          >
+            Don't ask again
           </button>
         </div>
       )}
