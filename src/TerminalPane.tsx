@@ -380,26 +380,44 @@ function TerminalPane({
         </div>
       )}
       {pwAsk && (
-        <div className="pw-ask">
-          <KeyRound size={14} />
-          <span>Send the saved password for this connection?</span>
-          <button type="button" className="accent-btn" onClick={sendSavedPassword}>
-            Send
-          </button>
-          <button type="button" onClick={() => setPwAsk(false)}>
-            Not now
-          </button>
-          <button
-            type="button"
-            className="link-btn"
-            title="Stop offering this for this session"
-            onClick={() => {
-              pwNeverAskRef.current = true;
-              setPwAsk(false);
-            }}
-          >
-            Don't ask again
-          </button>
+        <div className="modal-overlay" onMouseDown={() => setPwAsk(false)}>
+          <div className="pw-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="pw-dialog-head">
+              <KeyRound size={16} />
+              <h3>Send saved password?</h3>
+            </div>
+            <p className="pw-dialog-body">
+              <strong>
+                {meta.user}@{meta.host}
+              </strong>{" "}
+              is asking for a password. Send the one saved for this
+              connection?
+            </p>
+            <div className="pw-dialog-buttons">
+              <button
+                type="button"
+                className="link-btn"
+                title="Stop offering this for the rest of this session"
+                onClick={() => {
+                  pwNeverAskRef.current = true;
+                  setPwAsk(false);
+                }}
+              >
+                Don't ask again
+              </button>
+              <button type="button" onClick={() => setPwAsk(false)}>
+                Not now
+              </button>
+              <button
+                type="button"
+                className="accent-btn"
+                autoFocus
+                onClick={sendSavedPassword}
+              >
+                Send password
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {pwNotice && <div className="files-error">{pwNotice}</div>}

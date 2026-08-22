@@ -720,18 +720,29 @@ function AiPanel({ sessionId, allSessions }: Props) {
             size="sm"
             title="How much the Copilot may do on its own"
             value={mode}
+            minWidth={260}
             options={[
               {
                 value: "observer",
                 label: "Observer",
                 icon: <Eye size={13} />,
+                description:
+                  "Reads and explains only — it cannot run anything, and suggests commands for you to run.",
               },
               {
                 value: "confirm",
                 label: "Confirm",
                 icon: <ShieldCheck size={13} />,
+                description:
+                  "Proposes a command and waits for your Approve before it runs. The safe default.",
               },
-              { value: "auto", label: "Auto", icon: <Zap size={13} /> },
+              {
+                value: "auto",
+                label: "Auto",
+                icon: <Zap size={13} />,
+                description:
+                  "Runs commands as soon as it asks for them, with no confirmation step.",
+              },
             ]}
             onChange={(v) => {
               const m = v as AiMode;

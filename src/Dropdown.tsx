@@ -20,6 +20,8 @@ export interface Option {
   value: string;
   label: string;
   icon?: ReactNode;
+  /** one line under the label in the list; the trigger stays compact */
+  description?: string;
 }
 
 const GAP = 4;
@@ -164,7 +166,14 @@ function OptionList({
           }}
         >
           {o.icon && <span className="dd-option-icon">{o.icon}</span>}
-          <span className="dd-option-label">{o.label}</span>
+          {o.description ? (
+            <span className="dd-option-text">
+              <span className="dd-option-label">{o.label}</span>
+              <span className="dd-option-desc">{o.description}</span>
+            </span>
+          ) : (
+            <span className="dd-option-label">{o.label}</span>
+          )}
         </div>
       ))}
     </>
