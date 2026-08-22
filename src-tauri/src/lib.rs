@@ -5,6 +5,7 @@ pub mod forwards;
 pub mod keys;
 pub mod local;
 pub mod s3;
+pub mod secrets;
 pub mod sftp;
 pub mod ssh;
 pub mod sshconfig;
@@ -79,10 +80,11 @@ pub fn run() {
             vault::vault_import,
             ai::ai_key_save,
             ai::ai_key_status,
-            ai::ai_biometric_available,
             ai::ai_chat,
             ai::ai_cancel,
             ai::ai_exec,
+            secrets::secrets_biometric_status,
+            secrets::secrets_biometric_set,
             local::local_open,
             local::local_write,
             local::local_resize,

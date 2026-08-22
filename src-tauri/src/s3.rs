@@ -109,9 +109,13 @@ pub fn build_bucket(
 }
 
 fn secret_for(id: &str) -> Result<String, String> {
-    keyring::Entry::new(KEYRING_SERVICE, id)
-        .and_then(|e| e.get_password())
-        .map_err(|e| format!("cannot read stored secret key: {e}"))
+    crate::secrets::get(KEYRING_SERVICE, id)
+        .ok_or_else(|| "cannot read stored secret key".to_string())
+}
+
+/// Ids of every saved storage, for secret migration.
+pub(crate) fn saved_ids() -> Result<Vec<String>, String> {
+    Ok(load_all()?.into_iter().map(|s| s.id).collect())
 }
 
 fn storage_for(id: &str) -> Result<(S3Storage, String), String> {
@@ -187,8 +191,7 @@ pub fn s3_save_storage(
         storage.id = uuid::Uuid::new_v4().to_string();
     }
     if let Some(secret) = secret.filter(|s| !s.is_empty()) {
-        keyring::Entry::new(KEYRING_SERVICE, &storage.id)
-            .and_then(|e| e.set_password(&secret))
+        crate::secrets::set(KEYRING_SERVICE, &storage.id, &secret)
             .map_err(|e| format!("cannot store secret key: {e}"))?;
     }
     match list.iter().position(|s| s.id == storage.id) {
@@ -205,9 +208,7 @@ pub fn s3_delete_storage(lock: State<'_, S3StoreLock>, id: String) -> Result<(),
     let mut list = load_all()?;
     list.retain(|s| s.id != id);
     save_all(&list)?;
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &id) {
-        let _ = entry.delete_credential();
-    }
+    crate::secrets::delete(KEYRING_SERVICE, &id);
     Ok(())
 }
 

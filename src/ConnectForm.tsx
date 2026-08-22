@@ -4,6 +4,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ArchiveRestore,
   Bot,
+  Fingerprint,
   ChevronRight,
   Cloud,
   CornerDownLeft,
@@ -22,6 +23,7 @@ import {
 import S3Storages from "./S3Storages";
 import VaultCard from "./VaultCard";
 import AiCard from "./AiCard";
+import SecurityCard from "./SecurityCard";
 import KeysCard, { type VaultKey } from "./KeysCard";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import OsIcon, { OS_CHOICES } from "./osIcons";
@@ -103,7 +105,7 @@ export function parseQuickConnect(
   return { user: m[1], host, port };
 }
 
-type Section = "hosts" | "keys" | "s3" | "backup" | "ai";
+type Section = "hosts" | "keys" | "s3" | "backup" | "ai" | "security";
 type ViewMode = "grid" | "list";
 
 const VIEW_KEY = "remotepal-hosts-view";
@@ -751,6 +753,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     { key: "s3", label: "S3 Storage", icon: <Cloud size={17} /> },
     { key: "backup", label: "Backup", icon: <ArchiveRestore size={17} /> },
     { key: "ai", label: "AI Copilot", icon: <Bot size={17} /> },
+    { key: "security", label: "Security", icon: <Fingerprint size={17} /> },
   ];
 
   return (
@@ -800,6 +803,11 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
         {section === "ai" && (
           <div className="home-cards">
             <AiCard />
+          </div>
+        )}
+        {section === "security" && (
+          <div className="home-cards">
+            <SecurityCard />
           </div>
         )}
       </main>

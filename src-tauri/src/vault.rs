@@ -174,16 +174,15 @@ struct NativeManifest {
     s3_secrets: HashMap<String, String>,
 }
 
+// backups go through the shared store, so an export still finds secrets
+// that are behind Touch ID and an import puts them wherever the setting
+// currently says they belong
 fn keyring_get(service: &str, account: &str) -> Option<String> {
-    keyring::Entry::new(service, account)
-        .and_then(|e| e.get_password())
-        .ok()
+    crate::secrets::get(service, account)
 }
 
 fn keyring_set(service: &str, account: &str, value: &str) -> Result<(), String> {
-    keyring::Entry::new(service, account)
-        .and_then(|e| e.set_password(value))
-        .map_err(|e| format!("credential store: {e}"))
+    crate::secrets::set(service, account, value)
 }
 
 // ------------------------------------------------------------- export

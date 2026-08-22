@@ -755,9 +755,8 @@ pub fn ssh_send_saved_password(
     id: u32,
     conn_id: String,
 ) -> Result<(), String> {
-    let password = keyring::Entry::new(crate::connections::KEYRING_SERVICE, &conn_id)
-        .and_then(|e| e.get_password())
-        .map_err(|_| "no password saved for this connection".to_string())?;
+    let password = crate::secrets::get(crate::connections::KEYRING_SERVICE, &conn_id)
+        .ok_or_else(|| "no password saved for this connection".to_string())?;
     if password.is_empty() {
         return Err("no password saved for this connection".to_string());
     }

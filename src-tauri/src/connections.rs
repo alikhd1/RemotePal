@@ -107,15 +107,12 @@ pub fn connection_save(
     let existing = list.iter().position(|c| c.id == conn.id);
     conn.has_password = match &password {
         Some(pw) if !pw.is_empty() => {
-            keyring::Entry::new(KEYRING_SERVICE, &conn.id)
-                .and_then(|e| e.set_password(pw))
+            crate::secrets::set(KEYRING_SERVICE, &conn.id, pw)
                 .map_err(|e| format!("cannot store password: {e}"))?;
             true
         }
         Some(_) => {
-            if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &conn.id) {
-                let _ = entry.delete_credential();
-            }
+            crate::secrets::delete(KEYRING_SERVICE, &conn.id);
             false
         }
         None => existing.map(|i| list[i].has_password).unwrap_or(false),
@@ -136,19 +133,20 @@ pub fn connection_delete(lock: State<'_, StoreLock>, id: String) -> Result<(), S
     list.retain(|c| c.id != id);
     save_all(&list)?;
     let _ = crate::sshconfig::sync_ssh_config();
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, &id) {
-        let _ = entry.delete_credential();
-    }
+    crate::secrets::delete(KEYRING_SERVICE, &id);
     Ok(())
+}
+
+/// Ids of every saved connection, for secret migration.
+pub(crate) fn saved_ids() -> Result<Vec<String>, String> {
+    Ok(load_all()?.into_iter().map(|c| c.id).collect())
 }
 
 fn spec_from_saved(conn: &SavedConnection) -> Result<ConnectSpec, String> {
     let password = if conn.has_password {
-        Some(
-            keyring::Entry::new(KEYRING_SERVICE, &conn.id)
-                .and_then(|e| e.get_password())
-                .map_err(|e| format!("cannot read stored password for {}: {e}", conn.name))?,
-        )
+        Some(crate::secrets::get(KEYRING_SERVICE, &conn.id).ok_or_else(|| {
+            format!("cannot read stored password for {}", conn.name)
+        })?)
     } else {
         None
     };

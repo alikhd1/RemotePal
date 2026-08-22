@@ -23,7 +23,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::ssh::{exec_capture_capped, SshSessions};
 
-const KEYRING_SERVICE: &str = "RemotePal-AI";
+const KEYRING_SERVICE: &str = crate::secrets::SERVICE_AI;
 const DEFAULT_PROVIDER: &str = "anthropic";
 const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -38,38 +38,7 @@ const DEFAULT_MODEL_GAPGPT: &str = "gpt-4o";
 pub struct AiState {
     /// turn_id -> cancel flag, polled by the streaming loop each chunk
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    /// provider id -> API key, read from the OS credential store once per
-    /// app run. macOS prompts for Keychain access on every read, so
-    /// re-reading per chat turn asked the user for permission on every
-    /// message; keeping it here makes that at most one prompt per launch.
-    keys: Mutex<HashMap<String, String>>,
     client: reqwest::Client,
-}
-
-impl AiState {
-    /// The provider's key, from memory if we've already read it.
-    fn cached_key(&self, provider: &str) -> Option<String> {
-        if let Some(k) = self.keys.lock().unwrap().get(provider) {
-            return Some(k.clone());
-        }
-        let k = key_get(provider)?;
-        self.keys
-            .lock()
-            .unwrap()
-            .insert(provider.to_string(), k.clone());
-        Some(k)
-    }
-
-    fn remember_key(&self, provider: &str, key: &str) {
-        self.keys
-            .lock()
-            .unwrap()
-            .insert(provider.to_string(), key.to_string());
-    }
-
-    fn forget_key(&self, provider: &str) {
-        self.keys.lock().unwrap().remove(provider);
-    }
 }
 
 impl Default for AiState {
@@ -83,7 +52,6 @@ impl Default for AiState {
             .unwrap_or_default();
         AiState {
             cancels: Mutex::new(HashMap::new()),
-            keys: Mutex::new(HashMap::new()),
             client,
         }
     }
@@ -91,47 +59,16 @@ impl Default for AiState {
 
 // ------------------------------------------------------------- keyring
 
-/// Read a provider's key. Touch ID–protected storage wins when an item is
-/// there (macOS only); otherwise fall back to the ordinary credential
-/// store, so keys saved before biometrics were enabled keep working.
 fn key_get(provider: &str) -> Option<String> {
-    match crate::biometric::get(
-        KEYRING_SERVICE,
-        provider,
-        "unlock your AI API key",
-    ) {
-        Ok(Some(k)) => return Some(k),
-        // cancelled/failed auth: don't silently fall through to a copy of
-        // the same secret the user just declined to unlock
-        Err(_) => return None,
-        Ok(None) => {}
-    }
-    keyring::Entry::new(KEYRING_SERVICE, provider)
-        .and_then(|e| e.get_password())
-        .ok()
+    crate::secrets::get(KEYRING_SERVICE, provider)
 }
 
-/// Store a key. With `biometric`, it goes into Touch ID–protected storage
-/// and the plain copy is removed, so there is only ever one of them.
-fn key_set(provider: &str, value: &str, biometric: bool) -> Result<(), String> {
-    if biometric {
-        crate::biometric::set(KEYRING_SERVICE, provider, value)?;
-        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, provider) {
-            let _ = entry.delete_credential();
-        }
-        return Ok(());
-    }
-    let _ = crate::biometric::delete(KEYRING_SERVICE, provider);
-    keyring::Entry::new(KEYRING_SERVICE, provider)
-        .and_then(|e| e.set_password(value))
-        .map_err(|e| format!("cannot store API key: {e}"))
+fn key_set(provider: &str, value: &str) -> Result<(), String> {
+    crate::secrets::set(KEYRING_SERVICE, provider, value)
 }
 
 fn key_del(provider: &str) {
-    let _ = crate::biometric::delete(KEYRING_SERVICE, provider);
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, provider) {
-        let _ = entry.delete_credential();
-    }
+    crate::secrets::delete(KEYRING_SERVICE, provider);
 }
 
 // ------------------------------------------------------------- wire types
@@ -901,40 +838,25 @@ fn anthropic_tools_to_openai(tools: &[Value]) -> Vec<Value> {
 /// `Some("")` clears, `None` leaves untouched. Returns whether a key is
 /// now present. Never returns the secret.
 #[tauri::command]
-pub fn ai_key_save(
-    state: State<'_, AiState>,
-    key: Option<String>,
-    provider: Option<String>,
-    biometric: Option<bool>,
-) -> Result<bool, String> {
+pub fn ai_key_save(key: Option<String>, provider: Option<String>) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     match key {
         Some(k) if !k.is_empty() => {
-            key_set(&provider, &k, biometric.unwrap_or(false))?;
-            // keep the in-memory copy in step so the next chat turn doesn't
-            // have to go back to the credential store
-            state.remember_key(&provider, &k);
+            key_set(&provider, &k)?;
             Ok(true)
         }
         Some(_) => {
             key_del(&provider);
-            state.forget_key(&provider);
             Ok(false)
         }
-        None => Ok(state.cached_key(&provider).is_some()),
+        None => Ok(key_get(&provider).is_some()),
     }
 }
 
 #[tauri::command]
-pub fn ai_key_status(state: State<'_, AiState>, provider: Option<String>) -> Result<bool, String> {
+pub fn ai_key_status(provider: Option<String>) -> Result<bool, String> {
     let provider = provider.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
-    Ok(state.cached_key(&provider).is_some())
-}
-
-/// Whether this machine can gate stored keys behind Touch ID.
-#[tauri::command]
-pub fn ai_biometric_available() -> bool {
-    crate::biometric::available()
+    Ok(key_get(&provider).is_some())
 }
 
 #[tauri::command]
@@ -967,7 +889,7 @@ pub async fn ai_chat(
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| default_model(&kind).to_string());
 
-    let api_key = match state.cached_key(&provider_id) {
+    let api_key = match key_get(&provider_id) {
         Some(k) => k,
         // keyless providers send no Authorization header at all
         None if requires_key == Some(false) => String::new(),
