@@ -1431,7 +1431,15 @@ body,
 .term-row {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
+  /* side panels are fixed-width; keep them from widening the pane and
+     scrolling the whole window sideways */
+  overflow: hidden;
+}
+
+.term-container {
+  min-width: 0;
 }
 
 /* ---------------------------------------------------- port forwards */
@@ -2236,6 +2244,9 @@ body,
   background: var(--panel);
   border-left: 1px solid var(--border);
   min-height: 0;
+  /* a row that cannot shrink must not widen the panel and push the whole
+     app past the window */
+  overflow: hidden;
 }
 
 .ai-header {
@@ -2731,19 +2742,48 @@ body,
   border-color: var(--accent);
 }
 
+/* two rows: the pickers, then the actions — they did not fit on one at
+   the panel's width, so the labels wrapped and Send was squeezed out */
+.ai-input-selects {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-input-selects > * {
+  min-width: 0;
+}
+
 .ai-input-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ai-input-actions .link-btn,
+.ai-attach {
+  white-space: nowrap;
+}
+
+/* Send keeps its full size and sits at the right edge */
+.ai-send {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .ai-attach {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 4px;
   font-size: 12px;
   color: var(--fg-dim);
+}
+
+.ai-attach input {
+  flex-shrink: 0;
+  margin: 0;
 }
 
 .ai-field-label {

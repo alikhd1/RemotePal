@@ -792,7 +792,7 @@ function AiPanel({ sessionId, allSessions }: Props) {
             }
           }}
         />
-        <div className="ai-input-actions">
+        <div className="ai-input-selects">
           <Select
             size="sm"
             title="How much the Copilot may do on its own"
@@ -845,6 +845,9 @@ function AiPanel({ sessionId, allSessions }: Props) {
             }))}
             onChange={switchProvider}
           />
+        </div>
+
+        <div className="ai-input-actions">
           <button
             type="button"
             className="link-btn"
@@ -867,13 +870,13 @@ function AiPanel({ sessionId, allSessions }: Props) {
             auto-attach
           </label>
           {busy ? (
-            <button className="link-btn" onClick={stop} title="Stop">
+            <button className="link-btn ai-send" onClick={stop} title="Stop">
               <Square size={13} />
               Stop
             </button>
           ) : (
             <button
-              className="accent-btn"
+              className="accent-btn ai-send"
               onClick={send}
               disabled={status === "awaiting_approval" || !input.trim()}
               title="Send (Enter)"
