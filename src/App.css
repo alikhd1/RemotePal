@@ -441,10 +441,10 @@ body,
   background-size:
     auto,
     300% 100%;
-  animation: host-connecting 1.1s linear infinite;
+  animation: border-progress 1.1s linear infinite;
 }
 
-@keyframes host-connecting {
+@keyframes border-progress {
   from {
     background-position:
       0 0,
@@ -1326,6 +1326,41 @@ body,
 
 .files-toggle.icon-only {
   padding: 4px 7px;
+}
+
+.files-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* the button that kicked off the work runs the border as a progress bar;
+   it sits on the tab bar, so the padding-box layer matches that surface */
+.files-toggle.loading {
+  opacity: 1;
+  cursor: progress;
+  border-color: transparent;
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(
+        90deg,
+        var(--border) 0%,
+        var(--border) 25%,
+        var(--accent) 50%,
+        var(--border) 75%,
+        var(--border) 100%
+      )
+      border-box;
+  background-size:
+    auto,
+    300% 100%;
+  animation: border-progress 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .files-toggle.loading {
+    animation: none;
+    border-color: var(--accent);
+  }
 }
 
 .files-toggle:hover {

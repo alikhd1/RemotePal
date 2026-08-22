@@ -63,6 +63,9 @@ function App() {
   const [autoPwOpen, setAutoPwOpen] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState(currentTheme());
   const [splitError, setSplitError] = useState<string | null>(null);
+  // which direction is mid-split; duplicating a session opens a whole new
+  // SSH connection, so the buttons stay busy until it lands
+  const [splitting, setSplitting] = useState<SplitDir | null>(null);
 
   const activeTab = tabs.find((t) => t.key === active) ?? null;
   const liveSessions = tabs.flatMap((t) =>
@@ -171,10 +174,12 @@ function App() {
   }
 
   async function splitPane(tabKey: string, paneId: string, dir: SplitDir) {
+    if (splitting) return;
     const tab = tabs.find((t) => t.key === tabKey);
     if (!tab || tab.kind !== "ssh") return;
     const pane = findPane(tab.root, paneId);
     if (!pane || pane.disconnected) return;
+    setSplitting(dir);
     try {
       const newId = await invoke<number>("ssh_duplicate", { id: pane.sshId });
       const newPane: SshPane = {
@@ -196,6 +201,8 @@ function App() {
           ? "Host key needs review — reconnect from the connect screen."
           : (e?.message ?? String(err)),
       );
+    } finally {
+      setSplitting(null);
     }
   }
 
@@ -300,15 +307,31 @@ function App() {
           {activeTab?.kind === "ssh" && activePaneId && (
             <>
               <button
-                className="files-toggle icon-only"
-                title="Split right (Ctrl+Shift+D)"
+                className={
+                  "files-toggle icon-only" +
+                  (splitting === "row" ? " loading" : "")
+                }
+                title={
+                  splitting
+                    ? "Opening a new session…"
+                    : "Split right (Ctrl+Shift+D)"
+                }
+                disabled={splitting !== null}
                 onClick={() => splitPane(activeTab.key, activePaneId, "row")}
               >
                 <Columns2 size={15} />
               </button>
               <button
-                className="files-toggle icon-only"
-                title="Split down (Ctrl+Shift+E)"
+                className={
+                  "files-toggle icon-only" +
+                  (splitting === "column" ? " loading" : "")
+                }
+                title={
+                  splitting
+                    ? "Opening a new session…"
+                    : "Split down (Ctrl+Shift+E)"
+                }
+                disabled={splitting !== null}
                 onClick={() => splitPane(activeTab.key, activePaneId, "column")}
               >
                 <Rows2 size={15} />
