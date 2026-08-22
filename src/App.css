@@ -1699,6 +1699,9 @@ body,
 /* ---------------------------------------------------- file browser */
 
 .files-panel {
+  /* double-clicking to open a file otherwise selects the row's text, and
+     the path bar and headers around it; nothing here is worth selecting */
+  user-select: none;
   width: 400px;
   flex-shrink: 0;
   display: flex;
@@ -1854,6 +1857,37 @@ body,
   min-height: 0;
   overflow-y: auto;
   padding: 4px;
+}
+
+/* indeterminate bar while a directory or prefix is being listed */
+.files-loading {
+  height: 2px;
+  flex-shrink: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    transparent
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: files-loading-sweep 0.9s ease-in-out infinite;
+}
+
+@keyframes files-loading-sweep {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .files-loading {
+    animation: none;
+    background: var(--accent);
+  }
 }
 
 .files-row {

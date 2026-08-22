@@ -71,6 +71,8 @@ function FileBrowser({ sessionId, active }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // navigating hits the network; without this the pane just sat still
+  const [loading, setLoading] = useState(false);
   const [inputMode, setInputMode] = useState<"mkdir" | "rename" | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,6 +95,7 @@ function FileBrowser({ sessionId, active }: Props) {
 
   async function load(dir: string) {
     setError(null);
+    setLoading(true);
     setSelected(new Set());
     setAnchor(null);
     setConfirmDelete(false);
@@ -113,6 +116,8 @@ function FileBrowser({ sessionId, active }: Props) {
       setPathInput(dir);
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -347,18 +352,29 @@ function FileBrowser({ sessionId, active }: Props) {
     }
   }
 
-  async function editSelected() {
-    if (!path || !selectedEntry || selectedEntry.isDir) return;
+  /// What double-clicking a row does: descend into a directory, or open
+  /// a file in the local editor with saves uploading back.
+  async function openEntry(entry: SftpEntry) {
+    if (!path) return;
+    if (entry.isDir) {
+      load(joinPath(path, entry.name));
+      return;
+    }
     setError(null);
     try {
       await invoke<string>("sftp_edit", {
         id: sessionId,
-        remotePath: joinPath(path, selectedEntry.name),
+        remotePath: joinPath(path, entry.name),
       });
-      flashNotice(`Editing ${selectedEntry.name} — saves auto-upload`);
+      flashNotice(`Editing ${entry.name} — saves auto-upload`);
     } catch (err) {
       setError(String(err));
     }
+  }
+
+  async function editSelected() {
+    if (!selectedEntry || selectedEntry.isDir) return;
+    await openEntry(selectedEntry);
   }
 
   async function syncFolder(deleteExtra: boolean) {
@@ -516,6 +532,8 @@ function FileBrowser({ sessionId, active }: Props) {
         </form>
       )}
 
+      {loading && <div className="files-loading" />}
+
       <div
         className="files-list"
         onContextMenu={(ev) => {
@@ -541,9 +559,7 @@ function FileBrowser({ sessionId, active }: Props) {
               setConfirmDelete(false);
               setCtxMenu({ x: ev.clientX, y: ev.clientY });
             }}
-            onDoubleClick={() => {
-              if (entry.isDir && path) load(joinPath(path, entry.name));
-            }}
+            onDoubleClick={() => openEntry(entry)}
           >
             <span className="files-icon">
               {entry.isDir ? (

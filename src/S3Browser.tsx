@@ -64,6 +64,8 @@ function S3Browser({ storageId, active }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // navigating hits the network; without this the pane just sat still
+  const [loading, setLoading] = useState(false);
   const [inputMode, setInputMode] = useState<"rename" | "mkbucket" | null>(
     null,
   );
@@ -94,6 +96,7 @@ function S3Browser({ storageId, active }: Props) {
 
   async function load(pfx: string) {
     resetView();
+    setLoading(true);
     try {
       const listing = await invoke<S3Listing>("s3_list", {
         id: storageId,
@@ -119,11 +122,14 @@ function S3Browser({ storageId, active }: Props) {
       prefixRef.current = pfx;
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
 
   async function loadBuckets() {
     resetView();
+    setLoading(true);
     bucketRef.current = null;
     setBucket(null);
     setPrefix("");
@@ -143,6 +149,8 @@ function S3Browser({ storageId, active }: Props) {
       );
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -592,6 +600,8 @@ function S3Browser({ storageId, active }: Props) {
         </form>
       )}
 
+      {loading && <div className="files-loading" />}
+
       <div
         className="files-list"
         onContextMenu={(ev) => {
@@ -617,6 +627,7 @@ function S3Browser({ storageId, active }: Props) {
             onDoubleClick={() => {
               if (bucket === null) enterBucket(row.name);
               else if (row.isFolder) load(row.id);
+              else editObject(row);
             }}
           >
             <span className="files-icon">
