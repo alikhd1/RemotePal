@@ -2013,9 +2013,45 @@ body,
 .term-banner button {
   padding: 3px 12px;
   font-size: 12px;
-  border: none;
+  color: #1e1e1e;
+  background: #f1f1f1;
+  /* transparent rather than none so the loading state can paint the
+     border without the button changing size */
+  border: 1px solid transparent;
   border-radius: 5px;
   cursor: pointer;
+}
+
+.term-banner button:disabled {
+  cursor: default;
+}
+
+/* same border-as-progress-bar as the split buttons, in dark on the
+   banner's light button rather than the accent */
+.term-banner button.loading {
+  cursor: progress;
+  background:
+    linear-gradient(#f1f1f1, #f1f1f1) padding-box,
+    linear-gradient(
+        90deg,
+        rgba(30, 30, 30, 0.18) 0%,
+        rgba(30, 30, 30, 0.18) 25%,
+        #1e1e1e 50%,
+        rgba(30, 30, 30, 0.18) 75%,
+        rgba(30, 30, 30, 0.18) 100%
+      )
+      border-box;
+  background-size:
+    auto,
+    300% 100%;
+  animation: border-progress 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .term-banner button.loading {
+    animation: none;
+    border-color: #1e1e1e;
+  }
 }
 
 /* offer to fill in a saved password when auto-answering is off; a modal

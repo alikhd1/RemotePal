@@ -341,7 +341,11 @@ function TerminalPane({
             Session disconnected.
             {bannerError ? ` ${bannerError}` : ""}
           </span>
-          <button onClick={reconnect} disabled={reconnecting}>
+          <button
+            className={reconnecting ? "loading" : ""}
+            onClick={reconnect}
+            disabled={reconnecting}
+          >
             {reconnecting ? "Reconnecting…" : "Reconnect"}
           </button>
           <button onClick={onClose}>Close pane</button>
