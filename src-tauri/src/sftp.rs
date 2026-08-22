@@ -75,6 +75,65 @@ pub(crate) async fn sftp_for_maps(
     Ok(sftp)
 }
 
+/// Single-quote a path for the remote shell. Names come from a remote
+/// listing, so they are untrusted input to a command line.
+fn sh_quote(s: &str) -> String {
+    // close the quote, add an escaped one, reopen: ' -> '\''
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// Copy (or move) paths into `dest_dir` on the same host. This runs `cp`
+/// / `mv` over the session rather than streaming the bytes here and back,
+/// so the data never leaves the server.
+#[tauri::command]
+pub async fn sftp_copy(
+    sessions: State<'_, SshSessions>,
+    id: u32,
+    sources: Vec<String>,
+    dest_dir: String,
+    move_items: bool,
+) -> Result<u32, String> {
+    let handle = sessions
+        .maps
+        .handles
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or("no such session")?;
+
+    let mut done = 0u32;
+    for src in &sources {
+        // pasting a directory inside itself would recurse
+        if dest_dir == *src || dest_dir.starts_with(&format!("{src}/")) {
+            return Err(format!("cannot copy {src} into itself"));
+        }
+        // -R -p rather than -a: BSD/macOS hosts have no -a
+        let verb = if move_items { "mv" } else { "cp -R -p" };
+        let cmd = format!(
+            "{verb} -- {} {}",
+            sh_quote(src),
+            sh_quote(&dest_dir)
+        );
+        let cap = crate::ssh::exec_capture_capped(
+            &handle,
+            &cmd,
+            Duration::from_secs(120),
+            8192,
+        )
+        .await?;
+        if cap.exit_code != 0 {
+            return Err(if cap.stderr.is_empty() {
+                format!("copy failed (exit {})", cap.exit_code)
+            } else {
+                cap.stderr
+            });
+        }
+        done += 1;
+    }
+    Ok(done)
+}
+
 async fn copy_remote_to_local(
     sftp: &SftpSession,
     remote_path: &str,
@@ -320,6 +379,21 @@ pub async fn sftp_sync(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quoting_survives_awkward_names() {
+        // ordinary name
+        assert_eq!(sh_quote("/tmp/notes.txt"), "'/tmp/notes.txt'");
+        // spaces need no special handling inside single quotes
+        assert_eq!(sh_quote("/tmp/my file"), "'/tmp/my file'");
+        // a quote in the name must not end the quoting — this is what
+        // stops a filename from becoming part of the command
+        assert_eq!(sh_quote("/tmp/it's"), r"'/tmp/it'\''s'");
+        // characters the shell would otherwise act on stay literal
+        assert_eq!(sh_quote("/tmp/a;rm -rf b"), "'/tmp/a;rm -rf b'");
+        assert_eq!(sh_quote("/tmp/$(whoami)"), "'/tmp/$(whoami)'");
+        assert_eq!(sh_quote("/tmp/`id`"), "'/tmp/`id`'");
+    }
 
     #[test]
     fn plan_copies_missing_changed_and_fudge() {

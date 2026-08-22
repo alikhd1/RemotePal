@@ -5,6 +5,12 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { FileText, Folder } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
+import {
+  clipForSession,
+  clipLabel,
+  clearClip,
+  setClip,
+} from "./fileClipboard";
 
 interface SftpEntry {
   name: string;
@@ -416,6 +422,41 @@ function FileBrowser({ sessionId, active }: Props) {
     }
   }
 
+  function copySelection(mode: "copy" | "cut") {
+    if (!path || selectedEntries.length === 0) return;
+    setClip({
+      kind: "sftp",
+      sessionId,
+      items: selectedEntries.map((e) => joinPath(path, e.name)),
+      mode,
+    });
+    flashNotice(
+      `${mode === "cut" ? "Cut" : "Copied"} ${selectedEntries.length} item${selectedEntries.length === 1 ? "" : "s"}`,
+    );
+  }
+
+  async function paste() {
+    const clip = clipForSession(sessionId);
+    if (!clip || !path) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const n = await invoke<number>("sftp_copy", {
+        id: sessionId,
+        sources: clip.items,
+        destDir: path,
+        moveItems: clip.mode === "cut",
+      });
+      if (clip.mode === "cut") clearClip();
+      flashNotice(`${clip.mode === "cut" ? "Moved" : "Copied"} ${n} item${n === 1 ? "" : "s"}`);
+      await load(path);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function menuItems(): MenuItem[] {
     const items: MenuItem[] = [];
     const files = selectedEntries.filter((e) => !e.isDir);
@@ -439,6 +480,10 @@ function FileBrowser({ sessionId, active }: Props) {
         });
       }
       items.push(
+        { label: "", separator: true },
+        { label: "Copy", onClick: () => copySelection("copy") },
+        { label: "Cut", onClick: () => copySelection("cut") },
+        { label: "", separator: true },
         {
           label:
             selectedEntries.length > 1
@@ -446,6 +491,16 @@ function FileBrowser({ sessionId, active }: Props) {
               : "Delete…",
           danger: true,
           onClick: () => setConfirmDelete(true),
+        },
+        { label: "", separator: true },
+      );
+    }
+    const clip = clipForSession(sessionId);
+    if (clip) {
+      items.push(
+        {
+          label: `Paste ${clipLabel(clip)}${clip.mode === "cut" ? " (move)" : ""}`,
+          onClick: paste,
         },
         { label: "", separator: true },
       );

@@ -4,6 +4,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileText, Folder } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
+import {
+  clipForBucket,
+  clipLabel,
+  clearClip,
+  setClip,
+} from "./fileClipboard";
 
 interface S3Object {
   key: string;
@@ -417,6 +423,45 @@ function S3Browser({ storageId, active }: Props) {
     }
   }
 
+  function copySelection(mode: "copy" | "cut") {
+    if (bucket === null || selectedRows.length === 0) return;
+    setClip({
+      kind: "s3",
+      storageId,
+      bucket,
+      items: selectedRows.map((r) => r.id),
+      mode,
+    });
+    flashNotice(
+      `${mode === "cut" ? "Cut" : "Copied"} ${selectedRows.length} item${selectedRows.length === 1 ? "" : "s"}`,
+    );
+  }
+
+  async function paste() {
+    const clip = clipForBucket(storageId, bucket);
+    if (!clip) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const n = await invoke<number>("s3_copy", {
+        id: storageId,
+        bucket: bucketRef.current,
+        sources: clip.items,
+        destPrefix: prefixRef.current,
+        moveItems: clip.mode === "cut",
+      });
+      if (clip.mode === "cut") clearClip();
+      flashNotice(
+        `${clip.mode === "cut" ? "Moved" : "Copied"} ${n} object${n === 1 ? "" : "s"}`,
+      );
+      await load(prefixRef.current);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function menuItems(): MenuItem[] {
     const items: MenuItem[] = [];
     if (bucket === null) {
@@ -470,6 +515,10 @@ function S3Browser({ storageId, active }: Props) {
         );
       }
       items.push(
+        { label: "", separator: true },
+        { label: "Copy", onClick: () => copySelection("copy") },
+        { label: "Cut", onClick: () => copySelection("cut") },
+        { label: "", separator: true },
         {
           label:
             selectedRows.length > 1
@@ -479,6 +528,16 @@ function S3Browser({ storageId, active }: Props) {
                 : "Delete…",
           danger: true,
           onClick: () => setConfirmDelete(true),
+        },
+        { label: "", separator: true },
+      );
+    }
+    const clip = clipForBucket(storageId, bucket);
+    if (clip) {
+      items.push(
+        {
+          label: `Paste ${clipLabel(clip)}${clip.mode === "cut" ? " (move)" : ""}`,
+          onClick: paste,
         },
         { label: "", separator: true },
       );

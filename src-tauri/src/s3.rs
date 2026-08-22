@@ -466,6 +466,75 @@ pub async fn s3_rename(id: String, bucket: Option<String>, from: String, to: Str
     Ok(())
 }
 
+/// Copy (or move) objects and prefixes into `dest_prefix`. S3 copies
+/// server-side, so nothing travels via this machine. A prefix source
+/// ends in `/` and is walked; the folder name is kept at the
+/// destination.
+#[tauri::command]
+pub async fn s3_copy(
+    id: String,
+    bucket: Option<String>,
+    sources: Vec<String>,
+    dest_prefix: String,
+    move_items: bool,
+) -> Result<u32, String> {
+    let bucket = bucket_for(&id, bucket.as_deref())?;
+    let mut copied = 0u32;
+
+    for src in &sources {
+        if src.ends_with('/') {
+            // pasting a folder inside itself would nest forever
+            if dest_prefix.starts_with(src.as_str()) {
+                return Err(format!("cannot copy {src} into itself"));
+            }
+            let base = src.trim_end_matches('/');
+            let name = base.rsplit('/').next().unwrap_or(base);
+            let pages = bucket
+                .list(src.clone(), None)
+                .await
+                .map_err(|e| e.to_string())?;
+            for page in pages {
+                for obj in page.contents {
+                    let rel = obj.key.strip_prefix(src.as_str()).unwrap_or(&obj.key);
+                    let to = format!("{dest_prefix}{name}/{rel}");
+                    if to == obj.key {
+                        continue;
+                    }
+                    bucket
+                        .copy_object_internal(&obj.key, &to)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    if move_items {
+                        bucket
+                            .delete_object(&obj.key)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    copied += 1;
+                }
+            }
+        } else {
+            let name = src.rsplit('/').next().unwrap_or(src);
+            let to = format!("{dest_prefix}{name}");
+            if &to == src {
+                continue; // already here
+            }
+            bucket
+                .copy_object_internal(src, &to)
+                .await
+                .map_err(|e| e.to_string())?;
+            if move_items {
+                bucket
+                    .delete_object(src)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            copied += 1;
+        }
+    }
+    Ok(copied)
+}
+
 // ---------------------------------------------------- presigned links
 
 #[tauri::command]
