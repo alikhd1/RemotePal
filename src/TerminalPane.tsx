@@ -50,6 +50,8 @@ interface Props {
   showAi: boolean;
   /** answer the remote's password prompts with the saved password */
   autoPassword: boolean;
+  /** this tab has more than one pane, so this one can be closed on its own */
+  canClosePane: boolean;
   meta: SessionMeta;
   savedConnId?: string;
   allSessions: LiveSession[];
@@ -69,6 +71,7 @@ function TerminalPane({
   showSnippets,
   showAi,
   autoPassword,
+  canClosePane,
   meta,
   savedConnId,
   allSessions,
@@ -444,6 +447,7 @@ function TerminalPane({
         sessionId={id}
         meta={meta}
         active={active && !disconnected}
+        onClose={canClosePane ? onClose : undefined}
       />
       <div className="term-row">
         <div ref={containerRef} className="term-container" />

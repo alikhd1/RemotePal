@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SessionMeta } from "./SnippetsPanel";
+import { X } from "lucide-react";
 
 interface Stats {
   cores: number;
@@ -28,6 +29,9 @@ interface Props {
   meta: SessionMeta;
   /** paused while the tab is hidden or the session is dead */
   active: boolean;
+  /** only offered when the tab has more than one pane — closing the last
+   *  one would really be closing the tab, which the tab's own X does */
+  onClose?: () => void;
 }
 
 const POLL_MS = 5000;
@@ -54,7 +58,7 @@ function fmtUptime(secs: number): string {
   return `${m}m`;
 }
 
-function ServerInfoBar({ sessionId, meta, active }: Props) {
+function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [cpuPct, setCpuPct] = useState<number | null>(null);
   const [rates, setRates] = useState<{ rx: number; tx: number } | null>(null);
@@ -172,6 +176,17 @@ function ServerInfoBar({ sessionId, meta, active }: Props) {
       )}
 
       {!stats && <span className="si-dim">reading server info…</span>}
+
+      {onClose && (
+        <button
+          type="button"
+          className="si-close"
+          title="Close this pane (Ctrl+Shift+W)"
+          onClick={onClose}
+        >
+          <X size={13} />
+        </button>
+      )}
     </div>
   );
 }

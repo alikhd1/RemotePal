@@ -452,6 +452,7 @@ function App() {
                     showSnippets={snippetsOpen.has(pane.paneId)}
                     showAi={aiOpen.has(pane.paneId)}
                     autoPassword={autoPwOpen.has(pane.paneId)}
+                    canClosePane={leaves(t.root).length > 1}
                     meta={pane.meta}
                     savedConnId={pane.savedId}
                     allSessions={liveSessions}
