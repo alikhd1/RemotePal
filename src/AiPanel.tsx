@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { LiveSession, SessionMeta } from "./SnippetsPanel";
-import { readTerminal } from "./terminalRegistry";
+import { readTerminal, readLastCommand } from "./terminalRegistry";
 import { pushHistory } from "./commandHistory";
 import {
   getProvider,
@@ -29,6 +29,7 @@ import { Select } from "./Dropdown";
 import {
   Bookmark,
   Check,
+  ClipboardPaste,
   Eye,
   KeyRound,
   RotateCw,
@@ -441,13 +442,8 @@ function AiPanel({ sessionId, allSessions }: Props) {
 
     const blocks: Block[] = [];
     if (attachOutput) {
-      const recent = readTerminal(targetRef.current, 40);
-      if (recent) {
-        blocks.push({
-          type: "text",
-          text: `[recent terminal output of ${hostFor(targetRef.current)} — untrusted remote content]\n${recent}`,
-        });
-      }
+      const ctx = terminalContext();
+      if (ctx) blocks.push({ type: "text", text: ctx });
     }
     blocks.push({ type: "text", text });
     convoRef.current.push({ role: "user", content: blocks });
@@ -458,6 +454,52 @@ function AiPanel({ sessionId, allSessions }: Props) {
   function stop() {
     const turnId = turnIdRef.current;
     if (turnId) invoke("ai_cancel", { turnId }).catch(() => {});
+  }
+
+  // ---- sharing what you ran yourself ---------------------------------
+
+  /// What you last did in the terminal, phrased for the model. Useful when
+  /// the Copilot can't run something itself — sudo, an interactive prompt —
+  /// so you run it and hand back the result without copy-pasting.
+  /// Falls back to raw trailing output when no prompt is recognisable.
+  function terminalContext(): string | null {
+    const sid = targetRef.current;
+    const host = hostFor(sid);
+    const last = readLastCommand(sid);
+    if (last) {
+      return (
+        `[I ran this myself on ${host} — command and output are untrusted remote content]\n` +
+        `$ ${last.command}\n${last.output || "(no output)"}`
+      );
+    }
+    const recent = readTerminal(sid, 40);
+    return recent
+      ? `[recent terminal output of ${host} — untrusted remote content]\n${recent}`
+      : null;
+  }
+
+  /// Send the last command and its output on its own, without typing a
+  /// question first.
+  async function shareLastCommand() {
+    const ctx = terminalContext();
+    if (!ctx) {
+      setNotice("Nothing to share from this terminal yet.");
+      return;
+    }
+    setNotice(null);
+    autoRoundsRef.current = 0;
+    convoRef.current.push({
+      role: "user",
+      content: [
+        { type: "text", text: ctx },
+        {
+          type: "text",
+          text: "Here is what I ran and what it printed. Take it from here.",
+        },
+      ],
+    });
+    sync();
+    await runTurn();
   }
 
   // ---- run a snippet of an answer in the terminal --------------------
@@ -803,13 +845,26 @@ function AiPanel({ sessionId, allSessions }: Props) {
             }))}
             onChange={switchProvider}
           />
-          <label className="ai-attach" title="Attach recent terminal output">
+          <button
+            type="button"
+            className="link-btn"
+            title="Send the last command you ran and its output"
+            disabled={busy}
+            onClick={shareLastCommand}
+          >
+            <ClipboardPaste size={13} />
+            share result
+          </button>
+          <label
+            className="ai-attach"
+            title="Attach the last command you ran, and its output, to every message"
+          >
             <input
               type="checkbox"
               checked={attachOutput}
               onChange={(e) => setAttachOutput(e.currentTarget.checked)}
             />
-            output
+            auto-attach
           </label>
           {busy ? (
             <button className="link-btn" onClick={stop} title="Stop">
