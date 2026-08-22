@@ -134,6 +134,67 @@ pub async fn sftp_copy(
     Ok(done)
 }
 
+/// Compress paths in `dir` into one archive, on the server. `format` is
+/// "zip" or "tar.gz"; zip needs the zip binary installed, tar is present
+/// almost everywhere, so both are offered rather than guessed at.
+#[tauri::command]
+pub async fn sftp_archive(
+    sessions: State<'_, SshSessions>,
+    id: u32,
+    dir: String,
+    names: Vec<String>,
+    archive: String,
+    format: String,
+) -> Result<String, String> {
+    if names.is_empty() {
+        return Err("nothing selected".to_string());
+    }
+    let handle = sessions
+        .maps
+        .handles
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or("no such session")?;
+
+    let quoted: Vec<String> = names.iter().map(|n| sh_quote(n)).collect();
+    let (name, tool) = match format.as_str() {
+        "zip" => (format!("{archive}.zip"), "zip -r -q"),
+        _ => (format!("{archive}.tar.gz"), "tar -czf"),
+    };
+    let cmd = format!(
+        "cd {} && {tool} {} {}",
+        sh_quote(&dir),
+        sh_quote(&name),
+        quoted.join(" ")
+    );
+
+    let cap = crate::ssh::exec_capture_capped(
+        &handle,
+        &cmd,
+        Duration::from_secs(600),
+        8192,
+    )
+    .await?;
+    if cap.exit_code != 0 {
+        let hint = if format == "zip" && cap.stderr.contains("not found") {
+            " — zip is not installed on this host, try tar.gz"
+        } else {
+            ""
+        };
+        return Err(format!(
+            "{}{hint}",
+            if cap.stderr.is_empty() {
+                format!("archiving failed (exit {})", cap.exit_code)
+            } else {
+                cap.stderr
+            }
+        ));
+    }
+    Ok(name)
+}
+
 async fn copy_remote_to_local(
     sftp: &SftpSession,
     remote_path: &str,

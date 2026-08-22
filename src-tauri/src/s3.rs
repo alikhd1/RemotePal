@@ -535,6 +535,117 @@ pub async fn s3_copy(
     Ok(copied)
 }
 
+/// Pack objects into one .tar.gz and put it back in the bucket.
+///
+/// Unlike the SFTP equivalent this cannot happen server-side — S3 has no
+/// notion of compressing objects — so the data is pulled down, packed in
+/// a temp directory and pushed back. That costs bandwidth both ways, so
+/// the UI warns before starting.
+#[tauri::command]
+pub async fn s3_archive(
+    id: String,
+    bucket: Option<String>,
+    sources: Vec<String>,
+    dest_prefix: String,
+    archive: String,
+) -> Result<String, String> {
+    if sources.is_empty() {
+        return Err("nothing selected".to_string());
+    }
+    let b = bucket_for(&id, bucket.as_deref())?;
+
+    let work = std::env::temp_dir().join(format!("remotepal-zip-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+
+    // clean the temp tree up whichever way this ends
+    let result = build_archive(&b, &sources, &work, &archive).await;
+    let packed = match result {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&work);
+            return Err(e);
+        }
+    };
+
+    let key = format!("{dest_prefix}{archive}.tar.gz");
+    let upload = async {
+        let mut file = tokio::fs::File::open(&packed)
+            .await
+            .map_err(|e| e.to_string())?;
+        b.put_object_stream(&mut file, &key)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&work);
+    upload?;
+    Ok(key)
+}
+
+/// Download every source into `work` and tar.gz it. Split out so the
+/// caller can always remove the temp tree.
+async fn build_archive(
+    b: &Bucket,
+    sources: &[String],
+    work: &std::path::Path,
+    archive: &str,
+) -> Result<std::path::PathBuf, String> {
+    let staged = work.join("staged");
+    std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
+
+    // keys to fetch, with the path each should take inside the archive
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for src in sources {
+        if src.ends_with('/') {
+            let base = src.trim_end_matches('/');
+            let folder = base.rsplit('/').next().unwrap_or(base).to_string();
+            let pages = b.list(src.clone(), None).await.map_err(|e| e.to_string())?;
+            for page in pages {
+                for obj in page.contents {
+                    let rel = obj.key.strip_prefix(src.as_str()).unwrap_or(&obj.key);
+                    wanted.push((obj.key.clone(), format!("{folder}/{rel}")));
+                }
+            }
+        } else {
+            let name = src.rsplit('/').next().unwrap_or(src).to_string();
+            wanted.push((src.clone(), name));
+        }
+    }
+    if wanted.is_empty() {
+        return Err("nothing to archive".to_string());
+    }
+
+    for (key, rel) in &wanted {
+        let target = staged.join(rel);
+        if let Some(dir) = target.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let mut file = tokio::fs::File::create(&target)
+            .await
+            .map_err(|e| e.to_string())?;
+        b.get_object_to_writer(key, &mut file)
+            .await
+            .map_err(|e| format!("{key}: {e}"))?;
+    }
+
+    let out = work.join(format!("{archive}.tar.gz"));
+    let file = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+    let enc = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut builder = tar::Builder::new(enc);
+    for (_, rel) in &wanted {
+        builder
+            .append_path_with_name(staged.join(rel), rel)
+            .map_err(|e| e.to_string())?;
+    }
+    builder
+        .into_inner()
+        .map_err(|e| e.to_string())?
+        .finish()
+        .map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
 // ---------------------------------------------------- presigned links
 
 #[tauri::command]

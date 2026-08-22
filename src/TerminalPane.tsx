@@ -120,6 +120,13 @@ function TerminalPane({
   const pwNeverAskRef = useRef(false);
 
   useEffect(() => {
+    // a reconnect swaps in a new session id without remounting the pane
+    // (paneId is stable on purpose), so clear the dead-session banner
+    // here rather than leaving it up over a working terminal
+    setDisconnected(false);
+    setBannerError(null);
+    setReconnecting(false);
+
     const el = containerRef.current!;
     const term = new Terminal({
       theme: getTermTheme(),

@@ -79,7 +79,9 @@ function FileBrowser({ sessionId, active }: Props) {
   const [error, setError] = useState<string | null>(null);
   // navigating hits the network; without this the pane just sat still
   const [loading, setLoading] = useState(false);
-  const [inputMode, setInputMode] = useState<"mkdir" | "rename" | null>(null);
+  const [inputMode, setInputMode] = useState<
+    "mkdir" | "rename" | "zip" | "targz" | null
+  >(null);
   const [inputValue, setInputValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
@@ -330,12 +332,24 @@ function FileBrowser({ sessionId, active }: Props) {
           from: joinPath(path, selectedEntry.name),
           to: joinPath(path, value),
         });
+      } else if (inputMode === "zip" || inputMode === "targz") {
+        setLoading(true);
+        const made = await invoke<string>("sftp_archive", {
+          id: sessionId,
+          dir: path,
+          names: selectedEntries.map((en) => en.name),
+          archive: value,
+          format: inputMode === "zip" ? "zip" : "tar.gz",
+        });
+        flashNotice(`Created ${made}`);
       }
       setInputMode(null);
       setInputValue("");
       load(path);
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -422,6 +436,15 @@ function FileBrowser({ sessionId, active }: Props) {
     }
   }
 
+  /// Default archive name: the single item's name, else the directory's.
+  function archiveBaseName(): string {
+    if (selectedEntries.length === 1) {
+      return selectedEntries[0].name.replace(/\.[^.]+$/, "");
+    }
+    const dir = (path ?? "").replace(/\/$/, "");
+    return dir.slice(dir.lastIndexOf("/") + 1) || "archive";
+  }
+
   function copySelection(mode: "copy" | "cut") {
     if (!path || selectedEntries.length === 0) return;
     setClip({
@@ -483,6 +506,20 @@ function FileBrowser({ sessionId, active }: Props) {
         { label: "", separator: true },
         { label: "Copy", onClick: () => copySelection("copy") },
         { label: "Cut", onClick: () => copySelection("cut") },
+        {
+          label: "Compress to .zip…",
+          onClick: () => {
+            setInputMode("zip");
+            setInputValue(archiveBaseName());
+          },
+        },
+        {
+          label: "Compress to .tar.gz…",
+          onClick: () => {
+            setInputMode("targz");
+            setInputValue(archiveBaseName());
+          },
+        },
         { label: "", separator: true },
         {
           label:
@@ -576,7 +613,15 @@ function FileBrowser({ sessionId, active }: Props) {
           <input
             autoFocus
             value={inputValue}
-            placeholder={inputMode === "mkdir" ? "new directory name" : "new name"}
+            placeholder={
+              inputMode === "mkdir"
+                ? "new directory name"
+                : inputMode === "zip"
+                  ? "archive name (.zip added)"
+                  : inputMode === "targz"
+                    ? "archive name (.tar.gz added)"
+                    : "new name"
+            }
             onChange={(e) => setInputValue(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setInputMode(null);
@@ -603,6 +648,10 @@ function FileBrowser({ sessionId, active }: Props) {
             className={
               "files-row" + (selected.has(entry.name) ? " selected" : "")
             }
+            onMouseDown={(ev) => {
+              // shift-click would otherwise drag a text selection across rows
+              if (ev.shiftKey) ev.preventDefault();
+            }}
             onClick={(ev) => handleSelect(ev, entry)}
             onContextMenu={(ev) => {
               ev.preventDefault();

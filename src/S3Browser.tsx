@@ -72,7 +72,9 @@ function S3Browser({ storageId, active }: Props) {
   const [error, setError] = useState<string | null>(null);
   // navigating hits the network; without this the pane just sat still
   const [loading, setLoading] = useState(false);
-  const [inputMode, setInputMode] = useState<"rename" | "mkbucket" | null>(
+  const [inputMode, setInputMode] = useState<
+    "rename" | "mkbucket" | "targz" | null
+  >(
     null,
   );
   const [inputValue, setInputValue] = useState("");
@@ -518,6 +520,19 @@ function S3Browser({ storageId, active }: Props) {
         { label: "", separator: true },
         { label: "Copy", onClick: () => copySelection("copy") },
         { label: "Cut", onClick: () => copySelection("cut") },
+        {
+          // no server-side packing in S3: this pulls the objects down and
+          // pushes the archive back, so it is worth saying so
+          label: "Compress to .tar.gz (downloads + re-uploads)…",
+          onClick: () => {
+            setInputMode("targz");
+            setInputValue(
+              selectedRows.length === 1
+                ? selectedRows[0].name.replace(/\.[^.]+$/, "")
+                : "archive",
+            );
+          },
+        },
         { label: "", separator: true },
         {
           label:
@@ -570,6 +585,27 @@ function S3Browser({ storageId, active }: Props) {
         loadBuckets();
       } catch (err) {
         setError(String(err));
+      }
+      return;
+    }
+    if (inputMode === "targz") {
+      setLoading(true);
+      try {
+        const key = await invoke<string>("s3_archive", {
+          id: storageId,
+          bucket: bucketRef.current,
+          sources: selectedRows.map((r) => r.id),
+          destPrefix: prefixRef.current,
+          archive: inputValue.trim(),
+        });
+        setInputMode(null);
+        setInputValue("");
+        flashNotice(`Created ${key}`);
+        await load(prefixRef.current);
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setLoading(false);
       }
       return;
     }
@@ -648,7 +684,13 @@ function S3Browser({ storageId, active }: Props) {
           <input
             autoFocus
             value={inputValue}
-            placeholder={inputMode === "mkbucket" ? "new bucket name" : "new name"}
+            placeholder={
+              inputMode === "mkbucket"
+                ? "new bucket name"
+                : inputMode === "targz"
+                  ? "archive name (.tar.gz added)"
+                  : "new name"
+            }
             onChange={(e) => setInputValue(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setInputMode(null);
@@ -672,6 +714,10 @@ function S3Browser({ storageId, active }: Props) {
           <div
             key={row.id}
             className={"files-row" + (selected.has(row.id) ? " selected" : "")}
+            onMouseDown={(ev) => {
+              // shift-click would otherwise drag a text selection across rows
+              if (ev.shiftKey) ev.preventDefault();
+            }}
             onClick={(ev) => handleSelect(ev, row)}
             onContextMenu={(ev) => {
               ev.preventDefault();
