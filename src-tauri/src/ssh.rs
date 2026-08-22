@@ -812,7 +812,10 @@ pub async fn ssh_duplicate(
 }
 
 /// Start a fresh session with the same chain a (possibly dead) session
-/// was opened with. The old session's specs are consumed.
+/// was opened with. The old session's specs are kept until the new
+/// session is actually up: a reconnect attempted while the host is still
+/// down must stay retryable, and consuming them up front left the pane
+/// permanently stuck on "nothing to reconnect" after the first failure.
 #[tauri::command]
 pub async fn ssh_reconnect(
     app: AppHandle,
@@ -824,10 +827,15 @@ pub async fn ssh_reconnect(
         .specs
         .lock()
         .unwrap()
-        .remove(&id)
+        .get(&id)
+        .cloned()
         .ok_or_else(|| ConnectError::other("nothing to reconnect"))?;
     let _ = send_cmd(&state, id, TermCmd::Close);
-    start_session(app, &state, &specs).await
+    let new_id = start_session(app, &state, &specs).await?;
+    // the new session carries its own copy, so retire the old entry only
+    // now that we know we have one
+    state.maps.specs.lock().unwrap().remove(&id);
+    Ok(new_id)
 }
 
 #[cfg(test)]
