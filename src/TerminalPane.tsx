@@ -305,9 +305,18 @@ function TerminalPane({
     }
   }
 
+  /// Close the password dialog and put the caret back in the terminal —
+  /// focus is on the dialog's button, so it would otherwise land on the
+  /// document and the next keystroke would go nowhere. Deferred so the
+  /// modal has unmounted before we take focus back.
+  function closePwAsk() {
+    setPwAsk(false);
+    setTimeout(() => termRef.current?.focus(), 0);
+  }
+
   /// Fill in the saved password for the prompt the remote is sitting at.
   function sendSavedPassword() {
-    setPwAsk(false);
+    closePwAsk();
     pwUntilRef.current = Date.now() + 1500;
     if (!savedConnId) return;
     invoke("ssh_send_saved_password", { id, connId: savedConnId }).catch((err) =>
@@ -380,7 +389,7 @@ function TerminalPane({
         </div>
       )}
       {pwAsk && (
-        <div className="modal-overlay" onMouseDown={() => setPwAsk(false)}>
+        <div className="modal-overlay" onMouseDown={closePwAsk}>
           <div className="pw-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="pw-dialog-head">
               <KeyRound size={16} />
@@ -400,12 +409,12 @@ function TerminalPane({
                 title="Stop offering this for the rest of this session"
                 onClick={() => {
                   pwNeverAskRef.current = true;
-                  setPwAsk(false);
+                  closePwAsk();
                 }}
               >
                 Don't ask again
               </button>
-              <button type="button" onClick={() => setPwAsk(false)}>
+              <button type="button" onClick={closePwAsk}>
                 Not now
               </button>
               <button
