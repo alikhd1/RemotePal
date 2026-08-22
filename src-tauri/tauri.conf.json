@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "RemotePal",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "identifier": "com.remotepal.app",
   "build": {
     "beforeDevCommand": "npm run dev",
