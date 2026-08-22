@@ -76,6 +76,18 @@ interface Props {
 
 const MAX_AUTO_ROUNDS = 8;
 
+/// Starters shown on an empty chat. Phrased as things you'd actually ask
+/// about a box you just connected to, and answerable by looking rather
+/// than by changing anything.
+const SUGGESTIONS = [
+  "What is this server running?",
+  "What's using the most disk space?",
+  "Why is it slow right now?",
+  "Any errors in the recent logs?",
+  "Which services failed to start?",
+  "Explain what's on my screen",
+];
+
 let turnSeq = 0;
 
 function AiPanel({ sessionId, allSessions }: Props) {
@@ -411,7 +423,12 @@ function AiPanel({ sessionId, allSessions }: Props) {
   // ---- user send / stop ---------------------------------------------
 
   async function send() {
-    const text = input.trim();
+    await sendText(input);
+  }
+
+  /// Shared by the input box and the starter suggestions.
+  async function sendText(raw: string) {
+    const text = raw.trim();
     if (!text || status === "streaming" || status === "running_tool") return;
     // no point sending a turn that will just fail on a missing key
     if (keyMissing && providerDef(providerRef.current).requiresKey !== false) {
@@ -541,8 +558,26 @@ function AiPanel({ sessionId, allSessions }: Props) {
       <div className="ai-msgs">
         {messages.length === 0 && !live.text && !live.thinking && (
           <div className="ai-empty">
-            Ask about this server, or have Copilot propose commands to run.
-            Every command needs your approval first.
+            <p>
+              Ask about <strong>{hostFor(target)}</strong>.{" "}
+              {mode === "observer"
+                ? "In Observer mode it can look and explain, but won't run anything."
+                : mode === "auto"
+                  ? "In Auto mode commands run as soon as it asks for them."
+                  : "Commands it proposes wait for your approval."}
+            </p>
+            <div className="ai-suggestions">
+              {SUGGESTIONS.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className="ai-suggestion"
+                  onClick={() => sendText(q)}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

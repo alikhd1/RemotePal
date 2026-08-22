@@ -2373,6 +2373,39 @@ body,
   line-height: 1.5;
 }
 
+.ai-empty p {
+  margin: 0 0 10px;
+}
+
+.ai-empty strong {
+  color: var(--fg);
+}
+
+/* starter questions on an empty chat */
+.ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ai-suggestion {
+  max-width: 100%;
+  padding: 5px 10px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.ai-suggestion:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .ai-msg {
   font-size: 13px;
   line-height: 1.45;
