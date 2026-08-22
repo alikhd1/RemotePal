@@ -2307,6 +2307,9 @@ body,
 }
 
 .si-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   color: var(--accent);
   white-space: nowrap;

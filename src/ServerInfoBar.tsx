@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SessionMeta } from "./SnippetsPanel";
+import OsIcon, { osLabel } from "./osIcons";
 import {
   Activity,
   Clock,
@@ -125,7 +126,11 @@ function ServerInfoBar({ sessionId, meta, active, onClose }: Props) {
 
   return (
     <div className="server-info">
-      <span className="si-host" title={`${meta.user}@${meta.host}:${meta.port}`}>
+      <span
+        className="si-host"
+        title={`${meta.user}@${meta.host}:${meta.port} — ${osLabel(meta.os)}`}
+      >
+        <OsIcon os={meta.os} size={14} />
         {meta.user}@{meta.host}
       </span>
 
