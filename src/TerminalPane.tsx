@@ -100,6 +100,8 @@ function TerminalPane({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [disconnected, setDisconnected] = useState(false);
+  // read by the data handler, which is bound once per session
+  const deadRef = useRef(false);
   const [pwNotice, setPwNotice] = useState<string | null>(null);
 
   // auto password answering: read through refs so the session-lifetime
@@ -128,6 +130,7 @@ function TerminalPane({
     setDisconnected(false);
     setBannerError(null);
     setReconnecting(false);
+    deadRef.current = false;
 
     const el = containerRef.current!;
     const term = new Terminal({
@@ -205,6 +208,9 @@ function TerminalPane({
     el.addEventListener("wheel", onWheel, { passive: false });
 
     const dataSub = term.onData((data) => {
+      // xterm's disableStdin should have stopped this, but never write to
+      // a session we already know has ended
+      if (deadRef.current) return;
       // the user taking over resets the wrong-password guard
       pwTriesRef.current = 0;
       setPwNotice(null);
@@ -269,6 +275,7 @@ function TerminalPane({
         // and refuse input, so a dead session cannot be mistaken for live
         term.options.cursorBlink = false;
         term.options.disableStdin = true;
+        deadRef.current = true;
         setDisconnected(true);
         onDisconnectedRef.current();
       }),

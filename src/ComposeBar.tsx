@@ -96,7 +96,7 @@ function ComposeBar({ sessionId, disabled }: Props) {
       (words.length > 1 && PATH_COMMANDS.has(verb)));
 
   useEffect(() => {
-    if (!open || !wantsPath) {
+    if (!open || !wantsPath || disabled) {
       setPathHits([]);
       return;
     }
@@ -136,7 +136,7 @@ function ComposeBar({ sessionId, disabled }: Props) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, wantsPath, token, sessionId, lastLine]);
+  }, [open, wantsPath, token, sessionId, lastLine, disabled]);
 
 
   const suggestions = useMemo<Suggestion[]>(() => {
@@ -182,7 +182,9 @@ function ComposeBar({ sessionId, disabled }: Props) {
 
   async function send() {
     const cmd = text.trim();
-    if (!cmd) return;
+    // Enter reaches here without going through the Send button, so the
+    // dead-session check has to live in the action, not just the control
+    if (!cmd || disabled) return;
     try {
       await invoke("ssh_write", {
         id: sessionId,
@@ -297,6 +299,7 @@ function ComposeBar({ sessionId, disabled }: Props) {
           value={text}
           rows={3}
           spellCheck={false}
+          disabled={disabled}
           placeholder={
             "Write a command, then Enter to send (Shift+Enter for a new line, ↑ for history, Tab to complete)"
           }
