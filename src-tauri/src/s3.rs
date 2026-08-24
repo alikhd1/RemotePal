@@ -88,6 +88,26 @@ pub fn region_creds(
     Ok((region, creds))
 }
 
+/// Whether the endpoint's host already names the bucket. Providers that
+/// give each account its own subdomain (Parspack, some MinIO setups) do
+/// this, and virtual-host addressing would then ask for
+/// `bucket.bucket.example.net`, which does not resolve.
+fn endpoint_names_bucket(endpoint: &str, bucket: &str) -> bool {
+    if endpoint.is_empty() || bucket.is_empty() {
+        return false;
+    }
+    let host = endpoint
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+    host == bucket || host.starts_with(&format!("{bucket}."))
+}
+
 /// Bucket handle for `bucket_name`, or the storage's pinned bucket
 /// when None.
 pub fn build_bucket(
@@ -101,11 +121,34 @@ pub fn build_bucket(
     }
     let (region, creds) = region_creds(storage, secret_key)?;
     let bucket = Bucket::new(name, region, creds).map_err(|e| e.to_string())?;
-    Ok(if storage.path_style {
-        bucket.with_path_style()
+    // honour the setting, but also fall into path style when virtual-host
+    // addressing would double the bucket into the hostname
+    Ok(
+        if storage.path_style || endpoint_names_bucket(&storage.endpoint, name) {
+            bucket.with_path_style()
+        } else {
+            bucket
+        },
+    )
+}
+
+/// Add a hint to transport failures, which otherwise surface as a bare
+/// "error sending request" with no clue what to change.
+pub(crate) fn explain(storage: &S3Storage, err: impl ToString) -> String {
+    let msg = err.to_string();
+    let unreachable = msg.contains("error sending request")
+        || msg.contains("failed to lookup")
+        || msg.contains("dns error")
+        || msg.contains("ConnectError");
+    if unreachable && !storage.path_style {
+        format!(
+            "{msg}
+
+Could not reach the bucket's host. If your provider's endpoint already includes the bucket or account name, turn on path-style addressing for this storage."
+        )
     } else {
-        bucket
-    })
+        msg
+    }
 }
 
 fn secret_for(id: &str) -> Result<String, String> {
@@ -138,7 +181,7 @@ pub async fn s3_list_buckets(id: String) -> Result<Vec<String>, String> {
     let (region, creds) = region_creds(&storage, &secret)?;
     let response = Bucket::list_buckets(region, creds)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| explain(&storage, e))?;
     let mut names: Vec<String> = response.bucket_names().collect();
     names.sort();
     Ok(names)
@@ -264,8 +307,11 @@ pub async fn list_dir(bucket: &Bucket, prefix: &str) -> Result<S3Listing, String
 
 #[tauri::command]
 pub async fn s3_list(id: String, bucket: Option<String>, prefix: String) -> Result<S3Listing, String> {
-    let bucket = bucket_for(&id, bucket.as_deref())?;
-    list_dir(&bucket, &prefix).await
+    let (storage, _) = storage_for(&id)?;
+    let handle = bucket_for(&id, bucket.as_deref())?;
+    list_dir(&handle, &prefix)
+        .await
+        .map_err(|e| explain(&storage, e))
 }
 
 #[derive(Clone, Serialize)]
@@ -892,6 +938,28 @@ pub async fn s3_edit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn endpoint_already_naming_the_bucket_is_detected() {
+        // the case from the field: the account subdomain is the bucket, so
+        // virtual-host addressing asked for c280148.c280148.parspack.net
+        assert!(endpoint_names_bucket(
+            "https://c280148.parspack.net",
+            "c280148"
+        ));
+        // bare host, no scheme, and with a port
+        assert!(endpoint_names_bucket("c280148.parspack.net", "c280148"));
+        assert!(endpoint_names_bucket("http://data.local:9000", "data"));
+        // the endpoint being exactly the bucket counts too
+        assert!(endpoint_names_bucket("https://c280148", "c280148"));
+
+        // ordinary providers keep virtual-host addressing
+        assert!(!endpoint_names_bucket("https://s3.amazonaws.com", "photos"));
+        assert!(!endpoint_names_bucket("https://minio.local:9000", "backups"));
+        // a prefix match must not count: "datastore." is not "data."
+        assert!(!endpoint_names_bucket("https://datastore.example.net", "data"));
+        assert!(!endpoint_names_bucket("", "data"));
+    }
 
     #[test]
     fn rfc3339_epoch_matches_known_values() {
