@@ -155,12 +155,23 @@ function App() {
     }
   }
 
-  /// Whether closing this tab throws away a live session. S3 tabs and
-  /// dead sessions have nothing to lose, so they close without asking.
+  /// Whether closing this tab throws work away. Sessions that already
+  /// ended have nothing left to lose, so those close without asking.
   function tabIsLive(t: Tab): boolean {
     if (t.kind === "ssh") return leaves(t.root).some((p) => !p.disconnected);
     if (t.kind === "local") return !exitedLocals.has(t.key);
-    return false;
+    return true; // s3: browsing state and any transfer in flight
+  }
+
+  /// What closing this tab costs, phrased for its kind.
+  function closeWarning(t: Tab): string {
+    if (t.kind === "s3") {
+      return "is open. Closing the tab discards where you are, and cancels anything still transferring.";
+    }
+    if (t.kind === "local") {
+      return "is running a shell. Closing the tab ends it.";
+    }
+    return "still has a live session. Closing the tab ends it, along with any file browser or forwards on it.";
   }
 
   function requestCloseTab(key: string) {
@@ -474,7 +485,10 @@ function App() {
               <strong>
                 {tabs.find((t) => t.key === confirmClose)?.title ?? "This tab"}
               </strong>{" "}
-              still has a live session. Closing the tab ends it.
+              {(() => {
+                const t = tabs.find((x) => x.key === confirmClose);
+                return t ? closeWarning(t) : "will be closed.";
+              })()}
             </p>
             <div className="pw-dialog-buttons">
               <button type="button" onClick={() => setConfirmClose(null)}>
