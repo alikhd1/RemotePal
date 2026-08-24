@@ -2343,6 +2343,48 @@ body,
   color: var(--fg-dim);
 }
 
+/* tags on a host card, and the editor's chips in the form */
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.tag-chip:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+/* the remove button inside an editor chip */
+.tag-chip button {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.tag-chip button:hover {
+  color: var(--danger);
+}
+
 .field-hint {
   font-weight: 400;
   color: var(--fg-dim);

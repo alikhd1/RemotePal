@@ -50,6 +50,8 @@ export interface SavedConnection {
   agentForward: boolean;
   /** OS slug for the icon (see osIcons.tsx); "" until detected */
   os: string;
+  /** free-form labels for filtering */
+  tags: string[];
   /** pinned auto-start forwards — passed through on save so edits keep them */
   forwards: SavedForward[];
 }
@@ -167,6 +169,8 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
   const [group, setGroup] = useState("");
   const [agentForward, setAgentForward] = useState(false);
   const [os, setOs] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
   const [remember, setRemember] = useState(false);
 
   async function refresh() {
@@ -369,6 +373,8 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setGroup(c.group || "");
     setAgentForward(c.agentForward || false);
     setOs(c.os || "");
+    setTags(c.tags ?? []);
+    setTagDraft("");
     setPassword("");
     setRemember(false);
     setFormOpen(true);
@@ -386,6 +392,8 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setGroup("");
     setAgentForward(false);
     setOs("");
+    setTags([]);
+    setTagDraft("");
     setRemember(false);
   }
 
@@ -408,6 +416,23 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     clearForm();
   }
 
+  function addTag(raw: string) {
+    // commas let a paste of "web, prod" land as two tags
+    const parts = raw
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return;
+    setTags((prev) => {
+      const next = [...prev];
+      for (const t of parts) {
+        if (!next.some((e) => e.toLowerCase() === t.toLowerCase())) next.push(t);
+      }
+      return next;
+    });
+    setTagDraft("");
+  }
+
   /** The full record for connection_save; keeps forwards intact on edit. */
   function connPayload(): SavedConnection {
     const existing = saved.find((c) => c.id === editingId);
@@ -423,6 +448,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
       group,
       agentForward,
       os,
+      tags,
       forwards: existing?.forwards ?? [],
     };
   }
@@ -523,7 +549,14 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
   const visible = useMemo(() => {
     if (trimmedQuery) {
       return sorted.filter((c) =>
-        [c.name, c.host, c.user, c.group, `${c.user}@${c.host}`]
+        [
+          c.name,
+          c.host,
+          c.user,
+          c.group,
+          ...(c.tags ?? []),
+          `${c.user}@${c.host}`,
+        ]
           .join("\u0000")
           .toLowerCase()
           .includes(trimmedQuery),
@@ -576,6 +609,24 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
             {c.user}@{c.host}:{c.port}
             {c.hasPassword ? " · password" : c.keyPath ? " · key" : ""}
           </span>
+          {(c.tags ?? []).length > 0 && (
+            <span className="tag-row">
+              {(c.tags ?? []).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className="tag-chip"
+                  title={`Show hosts tagged ${t}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setQuery(t);
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
         <span className="host-actions">
           <button
@@ -868,6 +919,46 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
                   />
                 </label>
               </div>
+              <label>
+                Tags <span className="field-hint">(optional)</span>
+                <input
+                  value={tagDraft}
+                  onChange={(e) => setTagDraft(e.currentTarget.value)}
+                  placeholder="prod, db — Enter to add"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      // Enter here must not submit the form
+                      e.preventDefault();
+                      addTag(e.currentTarget.value);
+                    } else if (
+                      e.key === "Backspace" &&
+                      !e.currentTarget.value &&
+                      tags.length > 0
+                    ) {
+                      setTags((prev) => prev.slice(0, -1));
+                    }
+                  }}
+                  onBlur={(e) => addTag(e.currentTarget.value)}
+                />
+              </label>
+              {tags.length > 0 && (
+                <div className="tag-row">
+                  {tags.map((t) => (
+                    <span key={t} className="tag-chip">
+                      {t}
+                      <button
+                        type="button"
+                        title={`Remove ${t}`}
+                        onClick={() =>
+                          setTags((prev) => prev.filter((x) => x !== t))
+                        }
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <label>
                 Host
                 <input

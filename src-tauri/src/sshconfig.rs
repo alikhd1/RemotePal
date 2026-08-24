@@ -126,6 +126,7 @@ mod tests {
                 group: String::new(),
                 agent_forward: false,
                 os: String::new(),
+                tags: Vec::new(),
             },
             SavedConnection {
                 id: "b".into(),
@@ -140,6 +141,7 @@ mod tests {
                 group: String::new(),
                 agent_forward: false,
                 os: String::new(),
+                tags: Vec::new(),
             },
         ];
         let block = block_for(&conns).join("\n");

@@ -51,6 +51,10 @@ pub struct SavedConnection {
     /// OS slug for the list icon, auto-detected on connect ("" = unknown)
     #[serde(default)]
     pub os: String,
+    /// free-form labels for filtering; defaulted so files written before
+    /// tags existed still load
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -324,6 +328,7 @@ mod tests {
             group: String::new(),
             agent_forward: false,
             os: String::new(),
+            tags: Vec::new(),
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();
