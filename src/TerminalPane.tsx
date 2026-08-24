@@ -19,6 +19,7 @@ import SnippetsPanel, {
 import { registerTerminal, unregisterTerminal } from "./terminalRegistry";
 import { getTermTheme, subscribeTheme } from "./themes";
 import { getTermFont, subscribeTermFont } from "./termFont";
+import { arabicRuns } from "./arabicJoiner";
 import "@xterm/xterm/css/xterm.css";
 
 /// Password prompts we answer: sudo, su, and OpenSSH's own. Anchored to
@@ -151,6 +152,14 @@ function TerminalPane({
     searchRef.current = search;
     // expose this buffer to the AI panel's read_terminal tool
     registerTerminal(id, term);
+    // draw Arabic-script runs as one unit so the text engine joins the
+    // letters; only the WebGL renderer consults joiners, so this does
+    // nothing on the DOM fallback below
+    try {
+      term.registerCharacterJoiner(arabicRuns);
+    } catch {
+      // older xterm without the joiner API: letters stay unjoined
+    }
     import("@xterm/addon-webgl").then(({ WebglAddon }) => {
       try {
         term.loadAddon(new WebglAddon());

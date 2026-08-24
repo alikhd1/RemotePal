@@ -12,6 +12,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getTermTheme, subscribeTheme } from "./themes";
 import { getTermFont, subscribeTermFont } from "./termFont";
+import { arabicRuns } from "./arabicJoiner";
 import OsIcon, { osLabel } from "./osIcons";
 import { TerminalSquare } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
@@ -66,6 +67,14 @@ function LocalTerminal({ active, shell, onExit }: Props) {
     term.open(el);
     termRef.current = term;
     fitRef.current = fit;
+    // draw Arabic-script runs as one unit so the text engine joins the
+    // letters; only the WebGL renderer consults joiners, so this does
+    // nothing on the DOM fallback below
+    try {
+      term.registerCharacterJoiner(arabicRuns);
+    } catch {
+      // older xterm without the joiner API: letters stay unjoined
+    }
     import("@xterm/addon-webgl").then(({ WebglAddon }) => {
       try {
         term.loadAddon(new WebglAddon());
