@@ -11,6 +11,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getTermTheme, subscribeTheme } from "./themes";
+import { getTermFont, subscribeTermFont } from "./termFont";
 import OsIcon, { osLabel } from "./osIcons";
 import { TerminalSquare } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
@@ -49,7 +50,7 @@ function LocalTerminal({ active, shell, onExit }: Props) {
     const el = containerRef.current!;
     const term = new Terminal({
       theme: getTermTheme(),
-      fontFamily: "Consolas, 'Cascadia Mono', monospace",
+      fontFamily: getTermFont(),
       fontSize: 14,
       cursorBlink: true,
       scrollback: 5000,
@@ -154,6 +155,16 @@ function LocalTerminal({ active, shell, onExit }: Props) {
     return subscribeTheme(() => {
       const term = termRef.current;
       if (term) term.options.theme = getTermTheme();
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeTermFont(() => {
+      const term = termRef.current;
+      if (term) {
+        term.options.fontFamily = getTermFont();
+        fitRef.current?.fit();
+      }
     });
   }, []);
 

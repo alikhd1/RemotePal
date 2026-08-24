@@ -18,6 +18,7 @@ import SnippetsPanel, {
 } from "./SnippetsPanel";
 import { registerTerminal, unregisterTerminal } from "./terminalRegistry";
 import { getTermTheme, subscribeTheme } from "./themes";
+import { getTermFont, subscribeTermFont } from "./termFont";
 import "@xterm/xterm/css/xterm.css";
 
 /// Password prompts we answer: sudo, su, and OpenSSH's own. Anchored to
@@ -130,7 +131,7 @@ function TerminalPane({
     const el = containerRef.current!;
     const term = new Terminal({
       theme: getTermTheme(),
-      fontFamily: "Consolas, 'Cascadia Mono', monospace",
+      fontFamily: getTermFont(),
       fontSize: 14,
       cursorBlink: true,
       scrollback: 5000,
@@ -298,6 +299,16 @@ function TerminalPane({
     return subscribeTheme(() => {
       const term = termRef.current;
       if (term) term.options.theme = getTermTheme();
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeTermFont(() => {
+      const term = termRef.current;
+      if (term) {
+        term.options.fontFamily = getTermFont();
+        fitRef.current?.fit();
+      }
     });
   }, []);
 
