@@ -2343,6 +2343,11 @@ body,
   color: var(--fg-dim);
 }
 
+.field-hint {
+  font-weight: 400;
+  color: var(--fg-dim);
+}
+
 /* the saved connection's name, ahead of the dimmer user@host */
 .si-name {
   color: var(--fg);

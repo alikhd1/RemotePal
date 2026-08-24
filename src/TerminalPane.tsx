@@ -255,6 +255,10 @@ function TerminalPane({
         maybeAnswerPassword(bytes);
       }),
       listen(`ssh-closed-${id}`, () => {
+        // a blinking cursor reads as "waiting for you to type" — stop it
+        // and refuse input, so a dead session cannot be mistaken for live
+        term.options.cursorBlink = false;
+        term.options.disableStdin = true;
         setDisconnected(true);
         onDisconnectedRef.current();
       }),

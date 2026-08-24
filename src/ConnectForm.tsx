@@ -159,7 +159,6 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
   const [group, setGroup] = useState("");
   const [agentForward, setAgentForward] = useState(false);
   const [os, setOs] = useState("");
-  const [save, setSave] = useState(false);
   const [remember, setRemember] = useState(false);
 
   async function refresh() {
@@ -363,7 +362,6 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setAgentForward(c.agentForward || false);
     setOs(c.os || "");
     setPassword("");
-    setSave(true);
     setRemember(false);
     setFormOpen(true);
   }
@@ -380,7 +378,6 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setGroup("");
     setAgentForward(false);
     setOs("");
-    setSave(false);
     setRemember(false);
   }
 
@@ -446,17 +443,16 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
     setConnecting(true);
     setError(null);
     try {
-      const title = (save && name) || `${user}@${host}`;
-      let savedRecord: SavedConnection | null = null;
-      if (save) {
-        savedRecord = await invoke<SavedConnection>("connection_save", {
+      const title = name || `${user}@${host}`;
+      // every connect is saved; the form no longer asks whether to
+      let savedRecord: SavedConnection | null =
+        await invoke<SavedConnection>("connection_save", {
           conn: connPayload(),
           // Some(pw) stores, Some("") clears, null leaves untouched
           password: remember ? password : null,
         });
-        setEditingId(savedRecord.id);
-        refresh();
-      }
+      setEditingId(savedRecord.id);
+      refresh();
       const id = await invoke<number>("ssh_connect", {
         host,
         port: parseInt(port, 10) || 22,
@@ -828,6 +824,32 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
               </button>
             </div>
             <div className="host-modal-body">
+              <div className="field-row">
+                <label className="grow">
+                  Name <span className="field-hint">(optional)</span>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.currentTarget.value)}
+                    placeholder={user && host ? `${user}@${host}` : "My server"}
+                  />
+                </label>
+                <label className="grow">
+                  Group <span className="field-hint">(optional)</span>
+                  <Combo
+                    value={group}
+                    onChange={setGroup}
+                    placeholder="Ungrouped"
+                    options={[
+                      ...new Set(saved.map((c) => c.group).filter(Boolean)),
+                    ].map((g) => ({
+                      value: g,
+                      label: g,
+                      icon: <FolderClosed size={15} />,
+                    }))}
+                    empty="New group"
+                  />
+                </label>
+              </div>
               <label>
                 Host
                 <input
@@ -923,69 +945,22 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
               <label className="check">
                 <input
                   type="checkbox"
-                  checked={save}
-                  onChange={(e) => {
-                    setSave(e.currentTarget.checked);
-                    if (!e.currentTarget.checked) setRemember(false);
-                  }}
+                  checked={remember}
+                  onChange={(e) => setRemember(e.currentTarget.checked)}
                 />
-                Save connection
+                Remember password in the OS credential store
               </label>
-              {save && (
-                <>
-                  <div className="field-row">
-                    <label className="grow">
-                      Name
-                      <input
-                        value={name}
-                        onChange={(e) => setName(e.currentTarget.value)}
-                        placeholder={
-                          user && host ? `${user}@${host}` : "My server"
-                        }
-                      />
-                    </label>
-                    <label className="grow">
-                      Group
-                      <Combo
-                        value={group}
-                        onChange={setGroup}
-                        placeholder="(optional)"
-                        options={[
-                          ...new Set(
-                            saved.map((c) => c.group).filter(Boolean),
-                          ),
-                        ].map((g) => ({
-                          value: g,
-                          label: g,
-                          icon: <FolderClosed size={15} />,
-                        }))}
-                        empty="New group"
-                      />
-                    </label>
-                  </div>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={remember}
-                      onChange={(e) => setRemember(e.currentTarget.checked)}
-                    />
-                    Remember password (Windows Credential Manager)
-                  </label>
-                </>
-              )}
               {error && <div className="connect-error">{error}</div>}
             </div>
             <div className="host-modal-foot">
-              {save && (
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={saveOnly}
-                  disabled={!host || !user}
-                >
-                  Save only
-                </button>
-              )}
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={saveOnly}
+                disabled={!host || !user}
+              >
+                Save without connecting
+              </button>
               <button
                 type="submit"
                 className="primary-btn"

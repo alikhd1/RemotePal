@@ -107,6 +107,8 @@ function LocalTerminal({ active, shell, onExit }: Props) {
             term.write(base64ToBytes(e.payload)),
           ),
           listen(`local-closed-${sid}`, () => {
+            term.options.cursorBlink = false;
+            term.options.disableStdin = true;
             setExited(true);
             onExitRef.current();
           }),
