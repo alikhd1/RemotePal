@@ -68,6 +68,10 @@ function App() {
   const [splitting, setSplitting] = useState<SplitDir | null>(null);
   // this machine's OS slug, so local tabs carry its logo like SSH tabs do
   const [localOs, setLocalOs] = useState<string | undefined>();
+  // local tabs whose shell has exited — nothing left to lose on close
+  const [exitedLocals, setExitedLocals] = useState<Set<string>>(new Set());
+  // tab awaiting a close confirmation
+  const [confirmClose, setConfirmClose] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<{ os: string }>("local_info")
@@ -151,6 +155,23 @@ function App() {
     }
   }
 
+  /// Whether closing this tab throws away a live session. S3 tabs and
+  /// dead sessions have nothing to lose, so they close without asking.
+  function tabIsLive(t: Tab): boolean {
+    if (t.kind === "ssh") return leaves(t.root).some((p) => !p.disconnected);
+    if (t.kind === "local") return !exitedLocals.has(t.key);
+    return false;
+  }
+
+  function requestCloseTab(key: string) {
+    const tab = tabs.find((t) => t.key === key);
+    if (tab && tabIsLive(tab)) {
+      setConfirmClose(key);
+      return;
+    }
+    closeTab(key);
+  }
+
   function closeTab(key: string) {
     const idx = tabs.findIndex((t) => t.key === key);
     const tab = tabs[idx];
@@ -159,6 +180,12 @@ function App() {
     if (tab?.kind === "ssh") {
       forgetPanes(leaves(tab.root).map((p) => p.paneId));
     }
+    setExitedLocals((prev) => {
+      if (!prev.has(key)) return prev;
+      const out = new Set(prev);
+      out.delete(key);
+      return out;
+    });
     if (active === key) {
       setActive(next.length ? next[Math.min(idx, next.length - 1)].key : null);
     }
@@ -272,6 +299,16 @@ function App() {
               key={t.key}
               className={"tab" + (active === t.key ? " active" : "")}
               onClick={() => setActive(t.key)}
+              onMouseDown={(e) => {
+                // stop the middle-click autoscroll cursor appearing
+                if (e.button === 1) e.preventDefault();
+              }}
+              onAuxClick={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  requestCloseTab(t.key);
+                }
+              }}
             >
               {t.kind === "ssh" ? (
                 <OsIcon os={leaves(t.root)[0]?.meta.os} size={16} />
@@ -289,7 +326,7 @@ function App() {
                 title="Close"
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(t.key);
+                  requestCloseTab(t.key);
                 }}
               >
                 <X size={13} />
@@ -426,6 +463,38 @@ function App() {
           />
         </div>
       </div>
+      {confirmClose && (
+        <div className="modal-overlay" onMouseDown={() => setConfirmClose(null)}>
+          <div className="pw-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="pw-dialog-head">
+              <X size={16} />
+              <h3>Close this tab?</h3>
+            </div>
+            <p className="pw-dialog-body">
+              <strong>
+                {tabs.find((t) => t.key === confirmClose)?.title ?? "This tab"}
+              </strong>{" "}
+              still has a live session. Closing the tab ends it.
+            </p>
+            <div className="pw-dialog-buttons">
+              <button type="button" onClick={() => setConfirmClose(null)}>
+                Keep open
+              </button>
+              <button
+                type="button"
+                className="accent-btn"
+                autoFocus
+                onClick={() => {
+                  closeTab(confirmClose);
+                  setConfirmClose(null);
+                }}
+              >
+                Close tab
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {splitError && (
         <div className="app-error">
           <span>{splitError}</span>
@@ -478,7 +547,9 @@ function App() {
               <LocalTerminal
                 active={active === t.key}
                 shell={t.shell}
-                onExit={() => {}}
+                onExit={() =>
+                  setExitedLocals((prev) => new Set(prev).add(t.key))
+                }
               />
             ) : (
               <S3Browser storageId={t.storageId} active={active === t.key} />
