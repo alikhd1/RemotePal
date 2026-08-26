@@ -1012,23 +1012,39 @@ body,
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  /* rows of tabs grow downward, so keep the toolbar on the first one */
-  align-items: flex-start;
+  overflow: hidden;
 }
 
-/* tabs wrap onto further rows rather than shrinking or scrolling, so
-   every tab stays readable and reachable; the cap is a safety valve for
-   an unreasonable number of them */
+/* one row of tabs at their natural width; it scrolls when they run out
+   of room, without a scrollbar sitting under them */
 .tab-strip {
   display: flex;
   align-items: stretch;
-  flex-wrap: wrap;
-  gap: 1px 1px;
+  gap: 1px;
   flex: 1;
   min-width: 0;
-  max-height: 124px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  height: 0;
+}
+
+.tab > .os-icon {
+  flex-shrink: 0;
+}
+
+/* pane actions live under the tabs, so opening more tabs never pushes
+   them out of reach */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 5px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
 }
 
 /* the tab's own icon keeps its size too */
@@ -1155,7 +1171,6 @@ body,
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  align-self: flex-start;
   padding-bottom: 4px;
 }
 

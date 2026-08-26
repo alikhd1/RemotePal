@@ -75,6 +75,21 @@ function App() {
 
   const stripRef = useRef<HTMLDivElement>(null);
 
+  // a vertical wheel over the strip walks it sideways; it is a
+  // horizontal list and most mice have no horizontal wheel
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    function onWheel(this: HTMLElement, e: WheelEvent) {
+      if (e.deltaX !== 0 || e.shiftKey) return;
+      if (this.scrollWidth <= this.clientWidth) return;
+      e.preventDefault();
+      this.scrollLeft += e.deltaY;
+    }
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
   // keep the tab you switched to visible when the strip has scrolled
   useEffect(() => {
     stripRef.current
@@ -405,8 +420,35 @@ function App() {
         </button>
         </div>
         <div className="tab-bar-right">
-          {activeTab?.kind === "ssh" && activePaneId && (
-            <>
+          <Select
+            size="sm"
+            align="right"
+            title="Theme"
+            value={theme}
+            options={THEME_NAMES.map((name) => ({
+              value: name,
+              label: name,
+              icon: (
+                <span
+                  className="theme-swatch"
+                  style={{
+                    background: THEMES[name].app.bg,
+                    borderColor: THEMES[name].app.border,
+                  }}
+                >
+                  <i style={{ background: THEMES[name].app.accent }} />
+                </span>
+              ),
+            }))}
+            onChange={(name) => {
+              applyTheme(name);
+              setTheme(name);
+            }}
+          />
+        </div>
+      </div>
+      {activeTab?.kind === "ssh" && activePaneId && (
+        <div className="action-bar">
               <button
                 className={
                   "files-toggle icon-only" +
@@ -490,35 +532,8 @@ function App() {
                 <Bot size={16} />
                 AI Copilot
               </button>
-            </>
-          )}
-          <Select
-            size="sm"
-            align="right"
-            title="Theme"
-            value={theme}
-            options={THEME_NAMES.map((name) => ({
-              value: name,
-              label: name,
-              icon: (
-                <span
-                  className="theme-swatch"
-                  style={{
-                    background: THEMES[name].app.bg,
-                    borderColor: THEMES[name].app.border,
-                  }}
-                >
-                  <i style={{ background: THEMES[name].app.accent }} />
-                </span>
-              ),
-            }))}
-            onChange={(name) => {
-              applyTheme(name);
-              setTheme(name);
-            }}
-          />
         </div>
-      </div>
+      )}
       {confirmClose && (
         <div className="modal-overlay" onMouseDown={() => setConfirmClose(null)}>
           <div className="pw-dialog" onMouseDown={(e) => e.stopPropagation()}>
