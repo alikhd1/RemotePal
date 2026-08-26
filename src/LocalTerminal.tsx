@@ -113,10 +113,12 @@ function LocalTerminal({ active, shell, onExit }: Props) {
         }
         id = sid;
         unlisteners.push(
-          listen<string>(`local-data-${sid}`, (e) =>
-            term.write(base64ToBytes(e.payload)),
-          ),
+          listen<string>(`local-data-${sid}`, (e) => {
+            if (disposed) return;
+            term.write(base64ToBytes(e.payload));
+          }),
           listen(`local-closed-${sid}`, () => {
+            if (disposed) return;
             term.options.cursorBlink = false;
             term.options.disableStdin = true;
             setExited(true);

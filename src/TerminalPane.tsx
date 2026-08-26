@@ -103,6 +103,10 @@ function TerminalPane({
   // read by the data handler, which is bound once per session
   const deadRef = useRef(false);
   const [pwNotice, setPwNotice] = useState<string | null>(null);
+  // a write that goes nowhere is otherwise invisible: the terminal just
+  // stops responding with no clue why
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const writeFailedRef = useRef(false);
 
   // auto password answering: read through refs so the session-lifetime
   // effect doesn't need to re-run when the toggle flips
@@ -131,6 +135,15 @@ function TerminalPane({
     setBannerError(null);
     setReconnecting(false);
     deadRef.current = false;
+    writeFailedRef.current = false;
+    setWriteError(null);
+
+    // Tauri's unlisten resolves on a later tick, so an event for the
+    // session this effect replaces can still arrive after it has set up.
+    // Those handlers close over state shared with the pane, so without
+    // this a stale close would mark the new session dead. Set
+    // synchronously in the cleanup below.
+    let live = true;
 
     const el = containerRef.current!;
     const term = new Terminal({
@@ -214,7 +227,18 @@ function TerminalPane({
       // the user taking over resets the wrong-password guard
       pwTriesRef.current = 0;
       setPwNotice(null);
-      invoke("ssh_write", { id, data }).catch(() => {});
+      invoke("ssh_write", { id, data })
+        .then(() => {
+          if (writeFailedRef.current) {
+            writeFailedRef.current = false;
+            setWriteError(null);
+          }
+        })
+        .catch((err) => {
+          if (writeFailedRef.current) return; // one message, not one per key
+          writeFailedRef.current = true;
+          setWriteError(`Could not send to this session: ${err}`);
+        });
     });
 
     /// Watch output for a password prompt and answer it from the saved
@@ -266,11 +290,15 @@ function TerminalPane({
 
     const unlisteners: Promise<UnlistenFn>[] = [
       listen<string>(`ssh-data-${id}`, (e) => {
+        if (!live) return;
         const bytes = base64ToBytes(e.payload);
         term.write(bytes);
         maybeAnswerPassword(bytes);
       }),
       listen(`ssh-closed-${id}`, () => {
+        // a close belonging to a session this pane has already moved past
+        // must not mark the current one dead
+        if (!live) return;
         // a blinking cursor reads as "waiting for you to type" — stop it
         // and refuse input, so a dead session cannot be mistaken for live
         term.options.cursorBlink = false;
@@ -288,6 +316,7 @@ function TerminalPane({
     observer.observe(el);
 
     return () => {
+      live = false;
       observer.disconnect();
       el.removeEventListener("wheel", onWheel);
       dataSub.dispose();
@@ -474,6 +503,7 @@ function TerminalPane({
           </div>
         </div>
       )}
+      {writeError && <div className="files-error">{writeError}</div>}
       {pwNotice && <div className="files-error">{pwNotice}</div>}
       {showSnippets && (
         <SnippetsPanel sessionId={id} meta={meta} allSessions={allSessions} />
