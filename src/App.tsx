@@ -197,7 +197,7 @@ function App() {
     sshId: number,
     title: string,
     meta: SessionMeta,
-    opts?: { openFiles?: boolean; savedId?: string },
+    opts?: { openFiles?: boolean; savedId?: string; autoPassword?: boolean },
   ) {
     const key = `tab-${nextTabSeq++}`;
     const pane: SshPane = {
@@ -213,6 +213,10 @@ function App() {
     ]);
     if (opts?.openFiles) {
       setFilesOpen((prev) => new Set(prev).add(pane.paneId));
+    }
+    // the connection remembers this, so a session starts the way it was left
+    if (opts?.autoPassword) {
+      setAutoPwOpen((prev) => new Set(prev).add(pane.paneId));
     }
     setActive(key);
   }
@@ -325,6 +329,9 @@ function App() {
         savedId: pane.savedId,
         disconnected: false,
       };
+      if (autoPwOpen.has(paneId)) {
+        setAutoPwOpen((prev) => new Set(prev).add(newPane.paneId));
+      }
       patchSshTab(tabKey, (t) => ({
         ...t,
         root: splitLeaf(t.root, paneId, dir, newPane),
@@ -562,7 +569,19 @@ function App() {
                   (autoPwOpen.has(activePaneId) ? " active" : "")
                 }
                 title="Auto-answer password prompts with this connection's saved password"
-                onClick={() => toggleIn(setAutoPwOpen, activePaneId)}
+                onClick={() => {
+                  toggleIn(setAutoPwOpen, activePaneId);
+                  const pane =
+                    activeTab?.kind === "ssh"
+                      ? findPane(activeTab.root, activePaneId)
+                      : null;
+                  if (pane?.savedId) {
+                    invoke("connection_set_auto_password", {
+                      id: pane.savedId,
+                      enabled: !autoPwOpen.has(activePaneId),
+                    }).catch(() => {});
+                  }
+                }}
               >
                 <KeyRound size={15} />
               </button>

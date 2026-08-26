@@ -38,6 +38,7 @@ pub fn run() {
             connections::connections_list,
             connections::connection_save,
             connections::connection_delete,
+            connections::connection_set_auto_password,
             connections::ssh_connect_saved,
             connections::deploy_key,
             sshconfig::ssh_config_sync,

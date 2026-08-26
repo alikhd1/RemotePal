@@ -482,6 +482,7 @@ pub fn import_backup(path: &str, password: &str) -> Result<ImportSummary, String
                 os: String::new(),
                 // the legacy format predates tags
                 tags: Vec::new(),
+                auto_password: false,
             });
             summary.connections += 1;
         }
@@ -584,6 +585,7 @@ mod tests {
                 agent_forward: false,
                 os: String::new(),
                 tags: Vec::new(),
+                auto_password: false,
             },
             SavedConnection {
                 id: "id-b".into(),
@@ -599,6 +601,7 @@ mod tests {
                 agent_forward: false,
                 os: String::new(),
                 tags: Vec::new(),
+                auto_password: false,
             },
         ];
         connections::save_all(&conns).unwrap();

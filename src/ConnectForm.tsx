@@ -52,6 +52,8 @@ export interface SavedConnection {
   os: string;
   /** free-form labels for filtering */
   tags: string[];
+  /** answer the remote's password prompts with the saved password */
+  autoPassword: boolean;
   /** pinned auto-start forwards — passed through on save so edits keep them */
   forwards: SavedForward[];
 }
@@ -125,7 +127,7 @@ interface Props {
     id: number,
     title: string,
     meta: SessionMeta,
-    opts?: { openFiles?: boolean; savedId?: string },
+    opts?: { openFiles?: boolean; savedId?: string; autoPassword?: boolean },
   ) => void;
   onOpenS3: (storageId: string, title: string) => void;
   activeSavedIds: Set<string>;
@@ -228,7 +230,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
           name: c.name || `${c.user}@${c.host}`,
           os: c.os || undefined,
         },
-        { ...opts, savedId: c.id },
+        { ...opts, savedId: c.id, autoPassword: c.autoPassword },
       );
       detectOsInBackground(c, id);
     } catch (err) {
@@ -449,6 +451,7 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
       agentForward,
       os,
       tags,
+      autoPassword: existing?.autoPassword ?? false,
       forwards: existing?.forwards ?? [],
     };
   }
@@ -506,7 +509,12 @@ function ConnectForm({ onConnected, onOpenS3, activeSavedIds }: Props) {
           name: title,
           os: os || undefined,
         },
-        savedRecord ? { savedId: savedRecord.id } : undefined,
+        savedRecord
+          ? {
+              savedId: savedRecord.id,
+              autoPassword: savedRecord.autoPassword,
+            }
+          : undefined,
       );
       if (savedRecord) detectOsInBackground(savedRecord, id);
       setFormOpen(false);

@@ -55,6 +55,9 @@ pub struct SavedConnection {
     /// tags existed still load
     #[serde(default)]
     pub tags: Vec<String>,
+    /// answer the remote's password prompts with the saved password
+    #[serde(default)]
+    pub auto_password: bool,
 }
 
 /// Serializes read-modify-write cycles on connections.json.
@@ -139,6 +142,27 @@ pub fn connection_delete(lock: State<'_, StoreLock>, id: String) -> Result<(), S
     let _ = crate::sshconfig::sync_ssh_config();
     crate::secrets::delete(KEYRING_SERVICE, &id);
     Ok(())
+}
+
+/// Remember the auto-password choice against the connection it was made
+/// on. Narrow on purpose: writing the whole record back from the UI to
+/// change one flag risks overwriting fields it did not have.
+#[tauri::command]
+pub fn connection_set_auto_password(
+    lock: State<'_, StoreLock>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let _guard = lock.0.lock().unwrap();
+    let mut list = load_all()?;
+    let Some(conn) = list.iter_mut().find(|c| c.id == id) else {
+        return Ok(()); // ad-hoc session: nothing saved to remember it on
+    };
+    if conn.auto_password == enabled {
+        return Ok(());
+    }
+    conn.auto_password = enabled;
+    save_all(&list)
 }
 
 /// Ids of every saved connection, for secret migration.
@@ -329,6 +353,7 @@ mod tests {
             agent_forward: false,
             os: String::new(),
             tags: Vec::new(),
+            auto_password: false,
         };
         save_all(std::slice::from_ref(&conn)).unwrap();
         let loaded = load_all().unwrap();
