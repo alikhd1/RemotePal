@@ -1040,6 +1040,7 @@ body,
 .action-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   flex-shrink: 0;
   padding: 5px 8px;
