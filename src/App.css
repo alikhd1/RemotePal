@@ -1007,11 +1007,33 @@ body,
 .tab-bar {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  gap: 8px;
   padding: 4px 6px 0;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  /* the strip inside scrolls; the bar itself must not */
+  overflow: hidden;
+}
+
+/* tabs and the new-tab buttons; this is the part that scrolls, so the
+   toolbar on the right stays put however many tabs are open */
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  height: 0;
+}
+
+/* the tab's own icon keeps its size too */
+.tab > .os-icon {
   flex-shrink: 0;
 }
 
@@ -1044,6 +1066,10 @@ body,
   display: flex;
   align-items: center;
   gap: 7px;
+  /* shrink to share the room, down to a floor where the title is still
+     worth reading; past that the strip scrolls */
+  flex: 0 1 auto;
+  min-width: 96px;
   max-width: 220px;
   padding: 5px 6px 5px 10px;
   font-size: 13px;
@@ -1070,6 +1096,8 @@ body,
 }
 
 .tab-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1087,6 +1115,7 @@ body,
 }
 
 .tab-close {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1128,7 +1157,7 @@ body,
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  flex-shrink: 0;
   padding-bottom: 4px;
 }
 

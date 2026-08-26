@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bot,
@@ -72,6 +72,64 @@ function App() {
   const [exitedLocals, setExitedLocals] = useState<Set<string>>(new Set());
   // tab awaiting a close confirmation
   const [confirmClose, setConfirmClose] = useState<string | null>(null);
+
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // a vertical wheel over the strip should walk along it, since it is a
+  // horizontal list and most mice have no horizontal wheel
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    function onWheel(e: WheelEvent) {
+      if (e.deltaX !== 0 || e.shiftKey) return; // already horizontal
+      const el = e.currentTarget as HTMLElement;
+      if (el.scrollWidth <= el.clientWidth) return; // nothing to scroll
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    }
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // keep the tab you switched to visible when the strip has scrolled
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector<HTMLElement>(".tab.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active, tabs.length]);
+
+  // Tab keys are claimed before the terminal sees them, so they work while
+  // a session has focus. Digits and Ctrl+Tab are not bindings a shell
+  // wants, unlike Ctrl+W, which readline uses to kill a word.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !e.altKey && /^[1-9]$/.test(e.key)) {
+        if (tabs.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const n = Number(e.key);
+        // 9 is "last tab", as it is in browsers
+        const idx = n === 9 ? tabs.length - 1 : Math.min(n - 1, tabs.length - 1);
+        setActive(tabs[idx].key);
+        return;
+      }
+      const cycles =
+        (e.ctrlKey && e.key === "Tab") ||
+        (mod && (e.key === "PageUp" || e.key === "PageDown"));
+      if (cycles && tabs.length > 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        const back = e.shiftKey || e.key === "PageUp";
+        const at = tabs.findIndex((t) => t.key === active);
+        const from = at === -1 ? 0 : at;
+        const next = (from + (back ? -1 : 1) + tabs.length) % tabs.length;
+        setActive(tabs[next].key);
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [tabs, active]);
 
   useEffect(() => {
     invoke<{ os: string }>("local_info")
@@ -294,6 +352,7 @@ function App() {
   return (
     <div className="app">
       <div className="tab-bar">
+        <div className="tab-strip" ref={stripRef}>
         <button
           className={"tab-home" + (active === null ? " active" : "")}
           title="Hosts & vault"
@@ -309,6 +368,7 @@ function App() {
             <div
               key={t.key}
               className={"tab" + (active === t.key ? " active" : "")}
+              data-tab-key={t.key}
               onClick={() => setActive(t.key)}
               onMouseDown={(e) => {
                 // stop the middle-click autoscroll cursor appearing
@@ -359,6 +419,7 @@ function App() {
         >
           <SquareTerminal size={15} />
         </button>
+        </div>
         <div className="tab-bar-right">
           {activeTab?.kind === "ssh" && activePaneId && (
             <>
