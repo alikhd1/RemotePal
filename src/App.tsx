@@ -9,6 +9,7 @@ import {
   Network,
   Plus,
   Rows2,
+  PanelLeft,
   ScrollText,
   SquareTerminal,
   X,
@@ -18,6 +19,7 @@ import TerminalPane from "./TerminalPane";
 import LocalTerminal from "./LocalTerminal";
 import S3Browser from "./S3Browser";
 import SplitLayout from "./SplitLayout";
+import SessionList, { type SessionItem } from "./SessionList";
 import OsIcon from "./osIcons";
 import { Select } from "./Dropdown";
 import {
@@ -48,6 +50,8 @@ type Tab =
   | { kind: "s3"; key: string; storageId: string; title: string }
   | { kind: "local"; key: string; title: string; shell?: string };
 
+const SIDEBAR_KEY = "remotepal-session-sidebar";
+
 let nextTabSeq = 1;
 let nextPaneSeq = 1;
 
@@ -72,6 +76,16 @@ function App() {
   const [exitedLocals, setExitedLocals] = useState<Set<string>>(new Set());
   // tab awaiting a close confirmation
   const [confirmClose, setConfirmClose] = useState<string | null>(null);
+  const [sidebar, setSidebar] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) === "1",
+  );
+
+  function toggleSidebar() {
+    setSidebar((on) => {
+      localStorage.setItem(SIDEBAR_KEY, on ? "0" : "1");
+      return !on;
+    });
+  }
 
   const stripRef = useRef<HTMLDivElement>(null);
 
@@ -153,6 +167,25 @@ function App() {
         : [],
     ),
   );
+
+  const sessionItems: SessionItem[] = tabs.map((t) => {
+    if (t.kind === "ssh") {
+      const panes = leaves(t.root);
+      const meta = panes[0]?.meta;
+      return {
+        key: t.key,
+        title: t.title,
+        kind: "ssh",
+        os: meta?.os,
+        dead: panes.some((p) => p.disconnected),
+        detail: meta ? `${meta.user}@${meta.host}` : undefined,
+      };
+    }
+    if (t.kind === "local") {
+      return { key: t.key, title: t.title, kind: "local", os: localOs };
+    }
+    return { key: t.key, title: t.title, kind: "s3", detail: "S3" };
+  });
 
   function patchSshTab(key: string, fn: (t: Tab & { kind: "ssh" }) => Tab) {
     setTabs((prev) =>
@@ -420,6 +453,15 @@ function App() {
         </button>
         </div>
         <div className="tab-bar-right">
+          {tabs.length > 0 && (
+            <button
+              className={"files-toggle icon-only" + (sidebar ? " active" : "")}
+              title={sidebar ? "Hide session list" : "Show session list"}
+              onClick={toggleSidebar}
+            >
+              <PanelLeft size={15} />
+            </button>
+          )}
           <Select
             size="sm"
             align="right"
@@ -577,7 +619,16 @@ function App() {
           </button>
         </div>
       )}
-      <div className="panes">
+      <div className="workspace">
+        {sidebar && active !== null && tabs.length > 0 && (
+          <SessionList
+            items={sessionItems}
+            active={active}
+            onSelect={setActive}
+            onClose={requestCloseTab}
+          />
+        )}
+        <div className="panes">
         {tabs.map((t) => (
           <div
             key={t.key}
@@ -639,6 +690,7 @@ function App() {
             onOpenS3={addS3Tab}
             activeSavedIds={activeSavedIds}
           />
+        </div>
         </div>
       </div>
     </div>
