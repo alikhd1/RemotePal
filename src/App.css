@@ -1144,6 +1144,12 @@ body,
   flex-shrink: 0;
 }
 
+/* the sidebar toggle belongs with the sidebar, at the left edge, while
+   the pane actions stay grouped on the right */
+.sidebar-toggle {
+  margin-right: auto;
+}
+
 /* pane actions live under the tabs, so opening more tabs never pushes
    them out of reach */
 .action-bar {

@@ -77,7 +77,7 @@ function App() {
   // tab awaiting a close confirmation
   const [confirmClose, setConfirmClose] = useState<string | null>(null);
   const [sidebar, setSidebar] = useState(
-    () => localStorage.getItem(SIDEBAR_KEY) === "1",
+    () => localStorage.getItem(SIDEBAR_KEY) !== "0",
   );
 
   function toggleSidebar() {
@@ -453,15 +453,6 @@ function App() {
         </button>
         </div>
         <div className="tab-bar-right">
-          {tabs.length > 0 && (
-            <button
-              className={"files-toggle icon-only" + (sidebar ? " active" : "")}
-              title={sidebar ? "Hide session list" : "Show session list"}
-              onClick={toggleSidebar}
-            >
-              <PanelLeft size={15} />
-            </button>
-          )}
           <Select
             size="sm"
             align="right"
@@ -489,8 +480,20 @@ function App() {
           />
         </div>
       </div>
-      {activeTab?.kind === "ssh" && activePaneId && (
+      {active !== null && (
         <div className="action-bar">
+          <button
+            className={
+              "files-toggle icon-only sidebar-toggle" +
+              (sidebar ? " active" : "")
+            }
+            title={sidebar ? "Hide session list" : "Show session list"}
+            onClick={toggleSidebar}
+          >
+            <PanelLeft size={15} />
+          </button>
+          {activeTab?.kind === "ssh" && activePaneId && (
+            <>
               <button
                 className={
                   "files-toggle icon-only" +
@@ -574,6 +577,8 @@ function App() {
                 <Bot size={16} />
                 AI Copilot
               </button>
+            </>
+          )}
         </div>
       )}
       {confirmClose && (
