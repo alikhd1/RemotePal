@@ -75,22 +75,6 @@ function App() {
 
   const stripRef = useRef<HTMLDivElement>(null);
 
-  // a vertical wheel over the strip should walk along it, since it is a
-  // horizontal list and most mice have no horizontal wheel
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    function onWheel(e: WheelEvent) {
-      if (e.deltaX !== 0 || e.shiftKey) return; // already horizontal
-      const el = e.currentTarget as HTMLElement;
-      if (el.scrollWidth <= el.clientWidth) return; // nothing to scroll
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    }
-    strip.addEventListener("wheel", onWheel, { passive: false });
-    return () => strip.removeEventListener("wheel", onWheel);
-  }, []);
-
   // keep the tab you switched to visible when the strip has scrolled
   useEffect(() => {
     stripRef.current

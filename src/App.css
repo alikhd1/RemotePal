@@ -1012,24 +1012,23 @@ body,
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  /* the strip inside scrolls; the bar itself must not */
-  overflow: hidden;
+  /* rows of tabs grow downward, so keep the toolbar on the first one */
+  align-items: flex-start;
 }
 
-/* tabs and the new-tab buttons; this is the part that scrolls, so the
-   toolbar on the right stays put however many tabs are open */
+/* tabs wrap onto further rows rather than shrinking or scrolling, so
+   every tab stays readable and reachable; the cap is a safety valve for
+   an unreasonable number of them */
 .tab-strip {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  flex-wrap: wrap;
+  gap: 1px 1px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.tab-strip::-webkit-scrollbar {
-  height: 0;
+  max-height: 124px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 /* the tab's own icon keeps its size too */
@@ -1066,10 +1065,8 @@ body,
   display: flex;
   align-items: center;
   gap: 7px;
-  /* shrink to share the room, down to a floor where the title is still
-     worth reading; past that the strip scrolls */
-  flex: 0 1 auto;
-  min-width: 96px;
+  /* natural width up to a cap; rows wrap instead of tabs shrinking */
+  flex: 0 0 auto;
   max-width: 220px;
   padding: 5px 6px 5px 10px;
   font-size: 13px;
@@ -1158,6 +1155,7 @@ body,
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  align-self: flex-start;
   padding-bottom: 4px;
 }
 
