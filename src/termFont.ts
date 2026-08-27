@@ -41,3 +41,24 @@ export function subscribeTermFont(listener: () => void): () => void {
     listeners.delete(listener);
   };
 }
+
+// ---------------------------------------------------------------- reconnect
+
+const RECONNECT_KEY = "remotepal-auto-reconnect";
+
+/// How many times a dropped session retries before leaving it to you.
+export const RECONNECT_ATTEMPTS = 4;
+
+/// Backoff for attempt n (1-based): 1s, 2s, 4s, 8s. Long enough to let a
+/// rebooting host come back, short enough to feel automatic.
+export function reconnectDelay(attempt: number): number {
+  return 1000 * 2 ** (attempt - 1);
+}
+
+export function autoReconnectEnabled(): boolean {
+  return localStorage.getItem(RECONNECT_KEY) !== "0";
+}
+
+export function setAutoReconnect(on: boolean): void {
+  localStorage.setItem(RECONNECT_KEY, on ? "1" : "0");
+}

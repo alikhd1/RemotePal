@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { DEFAULT_TERM_FONT, getTermFont, setTermFont } from "./termFont";
+import {
+  DEFAULT_TERM_FONT,
+  getTermFont,
+  setTermFont,
+  autoReconnectEnabled,
+  setAutoReconnect,
+  RECONNECT_ATTEMPTS,
+} from "./termFont";
 
 // Terminal appearance. The font matters beyond taste: the default stack
 // has to cover whatever scripts you actually see, and open terminals
@@ -7,6 +14,7 @@ import { DEFAULT_TERM_FONT, getTermFont, setTermFont } from "./termFont";
 function TerminalCard() {
   const [font, setFont] = useState(getTermFont());
   const [notice, setNotice] = useState<string | null>(null);
+  const [reconnect, setReconnect] = useState(autoReconnectEnabled());
 
   function apply(value: string) {
     setTermFont(value);
@@ -17,6 +25,23 @@ function TerminalCard() {
   return (
     <div className="saved-panel">
       <h2>Terminal</h2>
+
+      <label className="ai-bio-toggle">
+        <input
+          type="checkbox"
+          checked={reconnect}
+          onChange={(e) => {
+            setAutoReconnect(e.currentTarget.checked);
+            setReconnect(e.currentTarget.checked);
+          }}
+        />
+        Reconnect dropped sessions automatically
+      </label>
+      <div className="saved-empty">
+        A session whose connection drops is dialled again up to{" "}
+        {RECONNECT_ATTEMPTS} times, waiting longer after each try. A shell you
+        exited is left alone — only a lost connection is retried.
+      </div>
 
       <label className="ai-field-label">Font family</label>
       <input

@@ -18,7 +18,13 @@ import SnippetsPanel, {
 } from "./SnippetsPanel";
 import { registerTerminal, unregisterTerminal } from "./terminalRegistry";
 import { getTermTheme, subscribeTheme } from "./themes";
-import { getTermFont, subscribeTermFont } from "./termFont";
+import {
+  getTermFont,
+  subscribeTermFont,
+  autoReconnectEnabled,
+  reconnectDelay,
+  RECONNECT_ATTEMPTS,
+} from "./termFont";
 import { arabicRuns } from "./arabicJoiner";
 import "@xterm/xterm/css/xterm.css";
 
@@ -91,6 +97,9 @@ function TerminalPane({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
+  /// how many automatic attempts this drop has had; 0 while connected
+  const [retry, setRetry] = useState(0);
+  const retryTimer = useRef<number | null>(null);
   const [bannerError, setBannerError] = useState<string | null>(null);
   // keep the session-lifetime effect independent of callback identity
   const onDisconnectedRef = useRef(onDisconnected);
@@ -295,7 +304,7 @@ function TerminalPane({
         term.write(bytes);
         maybeAnswerPassword(bytes);
       }),
-      listen(`ssh-closed-${id}`, () => {
+      listen<{ clean?: boolean }>(`ssh-closed-${id}`, (e) => {
         // a close belonging to a session this pane has already moved past
         // must not mark the current one dead
         if (!live) return;
@@ -306,6 +315,11 @@ function TerminalPane({
         deadRef.current = true;
         setDisconnected(true);
         onDisconnectedRef.current();
+        // a shell that exited was meant to end; only a dropped link is
+        // worth dialling back
+        if (!e.payload?.clean && autoReconnectEnabled()) {
+          scheduleRetry(1);
+        }
       }),
     ];
 
@@ -317,6 +331,10 @@ function TerminalPane({
 
     return () => {
       live = false;
+      if (retryTimer.current !== null) {
+        window.clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+      }
       observer.disconnect();
       el.removeEventListener("wheel", onWheel);
       dataSub.dispose();
@@ -357,19 +375,34 @@ function TerminalPane({
     });
   }, []);
 
-  async function reconnect() {
+  /// Shared by the button and the automatic retries. `attempt` is 0 for a
+  /// manual press, which also ends any retry sequence in progress.
+  async function reconnect(attempt = 0) {
+    if (retryTimer.current !== null) {
+      window.clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
     setReconnecting(true);
     setBannerError(null);
+    setRetry(attempt);
     try {
       const newId = await invoke<number>("ssh_reconnect", { id });
+      setRetry(0);
       onReconnected(newId);
     } catch (err) {
       const e = err as { kind?: string; message?: string };
+      // a changed or unknown host key needs a decision from the user;
+      // retrying just fails the same way
+      const needsReview =
+        e?.kind === "hostKeyUnknown" || e?.kind === "hostKeyChanged";
       setBannerError(
-        e?.kind === "hostKeyUnknown" || e?.kind === "hostKeyChanged"
+        needsReview
           ? "Host key needs review — reconnect from the connect screen."
           : (e?.message ?? String(err)),
       );
+      if (!needsReview && attempt > 0 && attempt < RECONNECT_ATTEMPTS) {
+        scheduleRetry(attempt + 1);
+      }
     } finally {
       setReconnecting(false);
     }
@@ -394,6 +427,14 @@ function TerminalPane({
     );
   }
 
+  function scheduleRetry(attempt: number) {
+    setRetry(attempt);
+    retryTimer.current = window.setTimeout(
+      () => reconnect(attempt),
+      reconnectDelay(attempt),
+    );
+  }
+
   function findInTerm(backward: boolean) {
     if (!searchQuery) return;
     if (backward) searchRef.current?.findPrevious(searchQuery);
@@ -412,11 +453,15 @@ function TerminalPane({
             {bannerError ? ` ${bannerError}` : ""}
           </span>
           <button
-            className={reconnecting ? "loading" : ""}
-            onClick={reconnect}
+            className={reconnecting || retry > 0 ? "loading" : ""}
+            onClick={() => reconnect(0)}
             disabled={reconnecting}
           >
-            {reconnecting ? "Reconnecting…" : "Reconnect"}
+            {reconnecting
+              ? "Reconnecting…"
+              : retry > 0
+                ? `Retrying (${retry}/${RECONNECT_ATTEMPTS})…`
+                : "Reconnect"}
           </button>
           <button onClick={onClose}>Close pane</button>
         </div>

@@ -69,6 +69,14 @@ pub struct ConnectSpec {
     pub agent_forward: bool,
 }
 
+/// Why a session ended, so the UI knows whether to offer to reconnect.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionClosed {
+    /// the shell exited or we asked to close, rather than the link dropping
+    pub clean: bool,
+}
+
 pub enum TermCmd {
     Data(Vec<u8>),
     Resize { cols: u32, rows: u32 },
@@ -286,7 +294,14 @@ async fn connect_one(
     spec: &ConnectSpec,
     via: Option<&Arc<SshHandle>>,
 ) -> Result<SshHandle, ConnectError> {
-    let config = Arc::new(client::Config::default());
+    let config = Arc::new(client::Config {
+        // russh sends none by default, so idle sessions get dropped by NAT
+        // and firewalls, and a half-dead link is only noticed on the next
+        // write. keepalive_max defaults to 3, so a silent peer is given up
+        // on after roughly three intervals.
+        keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        ..client::Config::default()
+    });
     let issue_slot = Arc::new(Mutex::new(None));
     let handler = KnownHostsHandler {
         host: spec.host.clone(),
@@ -673,6 +688,10 @@ pub async fn start_session(
     let maps = Arc::clone(&sessions.maps);
 
     tauri::async_runtime::spawn(async move {
+        // a shell that exits reports its status first; a dropped link
+        // never does. That is the difference between "you typed exit" and
+        // "the network went away".
+        let mut clean = false;
         loop {
             tokio::select! {
                 cmd = rx.recv() => match cmd {
@@ -684,7 +703,11 @@ pub async fn start_session(
                     Some(TermCmd::Resize { cols, rows }) => {
                         let _ = channel.window_change(cols, rows, 0, 0).await;
                     }
-                    Some(TermCmd::Close) | None => break,
+                    // asked to close: intentional, whatever the channel says
+                    Some(TermCmd::Close) | None => {
+                        clean = true;
+                        break;
+                    }
                 },
                 msg = channel.wait() => match msg {
                     Some(ChannelMsg::Data { ref data }) => {
@@ -693,6 +716,8 @@ pub async fn start_session(
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                         let _ = app.emit(&format!("ssh-data-{id}"), B64.encode(&data[..]));
                     }
+                    Some(ChannelMsg::ExitStatus { .. })
+                    | Some(ChannelMsg::ExitSignal { .. }) => clean = true,
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
                     Some(_) => {}
                 },
@@ -707,7 +732,7 @@ pub async fn start_session(
         maps.senders.lock().unwrap().remove(&id);
         maps.handles.lock().unwrap().remove(&id);
         maps.sftp.lock().unwrap().remove(&id);
-        let _ = app.emit(&format!("ssh-closed-{id}"), ());
+        let _ = app.emit(&format!("ssh-closed-{id}"), SessionClosed { clean });
     });
 
     Ok(id)
