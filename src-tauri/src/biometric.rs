@@ -37,6 +37,9 @@ mod imp {
     const ERR_SEC_DUPLICATE_ITEM: OSStatus = -25299;
     const ERR_SEC_USER_CANCELED: OSStatus = -128;
     const ERR_SEC_AUTH_FAILED: OSStatus = -25293;
+    /// The data-protection keychain needs an entitlement the app only has
+    /// when signed with one; unsigned and ad-hoc builds do not.
+    const ERR_SEC_MISSING_ENTITLEMENT: OSStatus = -34018;
 
     /// Touch ID or the device passcode. (kSecAccessControlUserPresence)
     const ACCESS_CONTROL_USER_PRESENCE: CFOptionFlags = 1 << 0;
@@ -97,6 +100,9 @@ mod imp {
         match status {
             ERR_SEC_USER_CANCELED => "Authentication cancelled.".to_string(),
             ERR_SEC_AUTH_FAILED => "Touch ID authentication failed.".to_string(),
+            ERR_SEC_MISSING_ENTITLEMENT => format!(
+                "{what} failed: this build cannot use the Touch ID keychain, which needs a signed app with keychain entitlements (OSStatus {status})"
+            ),
             other => format!("{what} failed (OSStatus {other})"),
         }
     }
@@ -105,20 +111,15 @@ mod imp {
     /// created — a decent proxy for "this Mac can gate on Touch ID or a
     /// passcode" without linking LocalAuthentication.
     pub fn available() -> bool {
-        unsafe {
-            let mut error: CFErrorRef = ptr::null_mut();
-            let ac = SecAccessControlCreateWithFlags(
-                ptr::null(),
-                kSecAttrAccessibleWhenUnlockedThisDeviceOnly as CFTypeRef,
-                ACCESS_CONTROL_USER_PRESENCE,
-                &mut error,
-            );
-            if ac.is_null() {
-                return false;
-            }
-            core_foundation::base::CFRelease(ac as CFTypeRef);
-            true
+        // Storing is where the entitlement is checked, so the only honest
+        // test is to store something. Adding needs no authentication —
+        // only reading does — so this does not prompt for Touch ID.
+        const PROBE: &str = "__remotepal_probe__";
+        if set(PROBE, PROBE, "probe").is_err() {
+            return false;
         }
+        let _ = delete(PROBE, PROBE);
+        true
     }
 
     /// Store (or replace) a secret behind Touch ID.

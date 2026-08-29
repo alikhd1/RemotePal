@@ -90,10 +90,24 @@ pub fn get(service: &str, account: &str) -> Option<String> {
 /// Store a secret in whichever backing store the setting selects, and
 /// clear it from the other so there is only ever one copy.
 pub fn set(service: &str, account: &str, value: &str) -> Result<(), String> {
+    // Protection is a hardening option; it must never be the reason a
+    // credential cannot be saved. If the protected store rejects the
+    // write — an unsigned build has no entitlement for it — fall back to
+    // the ordinary one and turn the setting off, since it demonstrably
+    // does not work here and would fail the same way next time.
     if biometric_enabled() {
-        crate::biometric::set(service, account, value)?;
-        if let Ok(entry) = keyring::Entry::new(service, account) {
-            let _ = entry.delete_credential();
+        match crate::biometric::set(service, account, value) {
+            Ok(()) => {
+                if let Ok(entry) = keyring::Entry::new(service, account) {
+                    let _ = entry.delete_credential();
+                }
+            }
+            Err(_) => {
+                let _ = set_biometric_enabled(false);
+                keyring::Entry::new(service, account)
+                    .and_then(|e| e.set_password(value))
+                    .map_err(|e| format!("cannot store secret: {e}"))?;
+            }
         }
     } else {
         let _ = crate::biometric::delete(service, account);

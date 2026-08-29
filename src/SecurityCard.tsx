@@ -76,9 +76,11 @@ function SecurityCard() {
         </>
       ) : (
         <div className="saved-empty">
-          This machine can't gate secrets behind a fingerprint, so they are
-          stored in the OS credential store as usual. Touch ID protection is
-          available on Macs with Touch ID or a paired Apple Watch.
+          Touch ID protection isn't available to this build, so secrets are
+          stored in the OS credential store as usual. It needs a Mac with
+          Touch ID <em>and</em> a signed app: the protected keychain is
+          gated behind an entitlement that unsigned and ad-hoc builds do
+          not carry.
         </div>
       )}
 
