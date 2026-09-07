@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { FileText, Folder } from "lucide-react";
 import ContextMenu, { type MenuItem } from "./ContextMenu";
@@ -82,6 +83,7 @@ function S3Browser({ storageId, active }: Props) {
   const [transfer, setTransfer] = useState<TransferState | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
   const transferIdRef = useRef<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
 
@@ -92,7 +94,9 @@ function S3Browser({ storageId, active }: Props) {
   }
   const prefixRef = useRef("");
   const bucketRef = useRef<string | null>(null);
-  void active;
+  // the drag-drop subscription is created once; this mirrors current state
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   function resetView() {
     setError(null);
@@ -225,8 +229,20 @@ function S3Browser({ storageId, active }: Props) {
         },
       ),
     ];
+    const dragUnlisten = getCurrentWebview().onDragDropEvent((event) => {
+      if (!activeRef.current || bucketRef.current === null) return;
+      if (event.payload.type === "over" || event.payload.type === "enter") {
+        setDropping(true);
+      } else if (event.payload.type === "leave") {
+        setDropping(false);
+      } else if (event.payload.type === "drop") {
+        setDropping(false);
+        if (event.payload.paths.length) uploadPaths(event.payload.paths);
+      }
+    });
     return () => {
       unlisteners.forEach((p) => p.then((un) => un()));
+      dragUnlisten.then((un) => un());
       window.clearTimeout(noticeTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -278,24 +294,33 @@ function S3Browser({ storageId, active }: Props) {
     }
   }
 
-  async function upload() {
-    const local = await openDialog({ multiple: true, title: "Upload files" });
-    if (!local) return;
-    const files = Array.isArray(local) ? local : [local];
-    for (let i = 0; i < files.length; i++) {
-      const name = localBasename(files[i]);
+  // shared by the Upload button and dropping files onto the pane. Only
+  // fires inside a bucket — the bucket-list view has nowhere to put them.
+  async function uploadPaths(locals: string[]) {
+    if (bucketRef.current === null) return;
+    for (let i = 0; i < locals.length; i++) {
+      const local = locals[i];
+      const name = localBasename(local);
       const label =
-        files.length > 1 ? `↑ ${name} (${i + 1}/${files.length})` : `↑ ${name}`;
+        locals.length > 1
+          ? `↑ ${name} (${i + 1}/${locals.length})`
+          : `↑ ${name}`;
       await runTransfer(label, (tid) =>
         invoke<number>("s3_upload", {
           id: storageId,
           bucket: bucketRef.current,
-          localPath: files[i],
+          localPath: local,
           key: prefixRef.current + name,
           transferId: tid,
         }),
       );
     }
+  }
+
+  async function upload() {
+    const local = await openDialog({ multiple: true, title: "Upload files" });
+    if (!local) return;
+    await uploadPaths(Array.isArray(local) ? local : [local]);
   }
 
   async function download() {
@@ -635,7 +660,7 @@ function S3Browser({ storageId, active }: Props) {
   }
 
   return (
-    <div className="files-panel full">
+    <div className={"files-panel full" + (dropping ? " dropping" : "")}>
       <div className="files-pathbar">
         <button
           type="button"
