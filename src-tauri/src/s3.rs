@@ -1,18 +1,27 @@
 //! S3 browser backend. Storage definitions live in ~/.remotepal/s3.json
 //! (metadata only); secret keys go to the OS credential store. Transfers
-//! wrap the local file in counting reader/writer adapters that emit
-//! `s3-progress` events ({ transferId, done, total }).
+//! emit `s3-progress` events ({ transferId, done, total }): downloads
+//! through a counting writer around the local file, uploads from the
+//! streaming body of each part (see `upload_file`).
 
+use std::collections::HashMap;
 use std::io;
+use std::path::Path;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
+use bytes::Bytes;
+use futures_util::StreamExt;
 use s3::creds::Credentials;
+use s3::serde_types::Part;
 use s3::{Bucket, Region};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncReadExt, AsyncWrite};
+use tokio::task::JoinSet;
 
 use crate::connections::vault_dir;
 
@@ -134,8 +143,7 @@ pub fn build_bucket(
 
 /// Add a hint to transport failures, which otherwise surface as a bare
 /// "error sending request" with no clue what to change.
-pub(crate) fn explain(storage: &S3Storage, err: impl ToString) -> String {
-    let msg = err.to_string();
+pub(crate) fn explain(storage: &S3Storage, msg: String) -> String {
     let unreachable = msg.contains("error sending request")
         || msg.contains("failed to lookup")
         || msg.contains("dns error")
@@ -181,7 +189,7 @@ pub async fn s3_list_buckets(id: String) -> Result<Vec<String>, String> {
     let (region, creds) = region_creds(&storage, &secret)?;
     let response = Bucket::list_buckets(region, creds)
         .await
-        .map_err(|e| explain(&storage, e))?;
+        .map_err(|e| explain(&storage, error_chain(&e)))?;
     let mut names: Vec<String> = response.bucket_names().collect();
     names.sort();
     Ok(names)
@@ -333,7 +341,8 @@ fn emit_progress(app: &AppHandle, transfer_id: &str, done: u64, total: u64) {
     );
 }
 
-/// Wraps an AsyncRead/AsyncWrite and emits progress as bytes move.
+/// Wraps the AsyncWrite a download lands in and emits progress as bytes
+/// arrive.
 struct Counting<T> {
     inner: T,
     app: AppHandle,
@@ -369,25 +378,6 @@ impl<T> Counting<T> {
     }
 }
 
-impl<T: AsyncRead + Unpin> AsyncRead for Counting<T> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let before = buf.filled().len();
-        let me = &mut *self;
-        match Pin::new(&mut me.inner).poll_read(cx, buf) {
-            Poll::Ready(Ok(())) => {
-                let n = (buf.filled().len() - before) as u64;
-                me.bump(n);
-                Poll::Ready(Ok(()))
-            }
-            other => other,
-        }
-    }
-}
-
 impl<T: AsyncWrite + Unpin> AsyncWrite for Counting<T> {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -413,6 +403,473 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Counting<T> {
     }
 }
 
+// ---------------------------------------------------------- uploads
+
+/// Smallest part a multipart upload is cut into. S3 insists on 5 MiB for
+/// every part but the last; 8 MiB keeps a few parts in flight cheap.
+const MIN_PART_SIZE: u64 = 8 * 1024 * 1024;
+/// S3 refuses more than 10,000 parts in one upload.
+const MAX_PARTS: u64 = 10_000;
+/// Parts in flight at once: enough to fill a quick link, few enough that
+/// each still makes headway on a slow one.
+const PARALLEL_PARTS: usize = 3;
+/// Tries per part (or per single-shot PUT) before the upload is given up.
+const PUT_ATTEMPTS: u32 = 5;
+/// A request that has moved no bytes for this long is dropped and retried.
+const STALL_TIMEOUT: Duration = Duration::from_secs(60);
+/// The body streams out in frames this big; each one ticks the progress.
+const FRAME: usize = 64 * 1024;
+/// Presigned part URLs stay valid this long; a retry re-signs anyway.
+const PRESIGN_SECS: u32 = 3600;
+
+/// Progress sink for one transfer. Counts bytes the network layer has
+/// taken and emits `s3-progress` every PROGRESS_STEP of them.
+#[derive(Clone)]
+pub struct UploadProgress {
+    app: AppHandle,
+    transfer_id: String,
+    total: u64,
+    done: Arc<AtomicU64>,
+    last: Arc<AtomicU64>,
+}
+
+impl UploadProgress {
+    pub fn new(app: AppHandle, transfer_id: String, total: u64) -> Self {
+        Self {
+            app,
+            transfer_id,
+            total,
+            done: Arc::new(AtomicU64::new(0)),
+            last: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn add(&self, n: u64) {
+        let done = self.done.fetch_add(n, Ordering::Relaxed) + n;
+        if done.saturating_sub(self.last.load(Ordering::Relaxed)) >= PROGRESS_STEP {
+            self.last.store(done, Ordering::Relaxed);
+            emit_progress(&self.app, &self.transfer_id, done, self.total.max(done));
+        }
+    }
+
+    /// A failed attempt's bytes go back on the pile; the bar simply
+    /// holds until the retry catches up.
+    fn take_back(&self, n: u64) {
+        self.done.fetch_sub(n, Ordering::Relaxed);
+    }
+
+    fn finish(&self) {
+        emit_progress(&self.app, &self.transfer_id, self.total, self.total);
+    }
+}
+
+/// Every message in an error's source chain, so a transport failure
+/// says *why* ("connection reset") rather than just "error sending
+/// request" — reqwest 0.12 keeps the cause out of Display.
+pub(crate) fn error_chain(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut text = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let part = cause.to_string();
+        if !text.contains(&part) {
+            text.push_str(": ");
+            text.push_str(&part);
+        }
+        source = cause.source();
+    }
+    text
+}
+
+/// One reqwest client for all uploads, so parts share a connection
+/// pool. There is deliberately no overall request timeout: a part on a
+/// slow link legitimately takes minutes. `send_put` catches stalls.
+fn upload_client() -> Result<reqwest::Client, String> {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .tcp_keepalive(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("cannot build http client: {e}"))?;
+    Ok(CLIENT.get_or_init(|| client).clone())
+}
+
+/// Why one PUT attempt did not succeed.
+#[derive(Debug)]
+enum PutError {
+    /// The request never completed (connect failure, reset, timeout).
+    Transport(String),
+    /// No bytes moved for STALL_TIMEOUT.
+    Stalled,
+    /// The service answered with an error.
+    Status {
+        status: u16,
+        code: String,
+        message: String,
+    },
+}
+
+impl PutError {
+    /// Transport trouble is always worth another go; a service answer
+    /// only when it blames the service rather than the request.
+    fn retryable(&self) -> bool {
+        match self {
+            PutError::Transport(_) | PutError::Stalled => true,
+            PutError::Status { status, code, .. } => {
+                *status >= 500
+                    || matches!(*status, 408 | 429)
+                    || matches!(
+                        code.as_str(),
+                        "RequestTimeout" | "SlowDown" | "InternalError"
+                    )
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for PutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PutError::Transport(msg) => f.write_str(msg),
+            PutError::Stalled => {
+                write!(f, "no data moved for {}s", STALL_TIMEOUT.as_secs())
+            }
+            PutError::Status {
+                status,
+                code,
+                message,
+            } => {
+                write!(f, "HTTP {status}")?;
+                if !code.is_empty() {
+                    write!(f, " {code}")?;
+                }
+                if !message.is_empty() {
+                    write!(f, ": {message}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Text of the first `<tag>…</tag>` in an S3 XML error body.
+fn xml_text(body: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    body.find(&open)
+        .and_then(|start| {
+            let rest = &body[start + open.len()..];
+            rest.find(&close).map(|end| rest[..end].trim().to_string())
+        })
+        .unwrap_or_default()
+}
+
+/// One attempt at PUTting `data` to a presigned `url`, streaming the
+/// body so `progress` reflects what has actually left this machine.
+/// `sent` records how much this attempt counted, so a failure can take
+/// it back. Returns the ETag.
+async fn send_put(
+    client: &reqwest::Client,
+    url: &str,
+    data: Bytes,
+    progress: Option<UploadProgress>,
+    sent: Arc<AtomicU64>,
+) -> Result<String, PutError> {
+    let len = data.len();
+    let activity = Arc::new(Mutex::new(Instant::now()));
+    let ticker = activity.clone();
+    let frames = (0..len)
+        .step_by(FRAME)
+        .map(move |offset| data.slice(offset..(offset + FRAME).min(len)));
+    let body = futures_util::stream::iter(frames).map(move |frame| {
+        let n = frame.len() as u64;
+        sent.fetch_add(n, Ordering::Relaxed);
+        if let Some(p) = &progress {
+            p.add(n);
+        }
+        *ticker.lock().unwrap() = Instant::now();
+        Ok::<Bytes, std::convert::Infallible>(frame)
+    });
+    // an explicit length keeps hyper from chunking, which S3 rejects
+    let request = client
+        .put(url)
+        .header(reqwest::header::CONTENT_LENGTH, len)
+        .body(reqwest::Body::wrap_stream(body))
+        .send();
+    tokio::pin!(request);
+    let response = loop {
+        tokio::select! {
+            outcome = &mut request => {
+                // without_url: the presigned URL carries the signature
+                break outcome
+                    .map_err(|e| PutError::Transport(error_chain(&e.without_url())))?;
+            }
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                let idle = activity.lock().unwrap().elapsed();
+                if idle > STALL_TIMEOUT {
+                    return Err(PutError::Stalled);
+                }
+            }
+        }
+    };
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string());
+    }
+    let body = tokio::time::timeout(Duration::from_secs(30), response.text())
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_default();
+    Err(PutError::Status {
+        status: status.as_u16(),
+        code: xml_text(&body, "Code"),
+        message: xml_text(&body, "Message"),
+    })
+}
+
+/// PUT `data` at `key` — as `part` (number, upload id) of a multipart
+/// upload, or as the whole object — retrying with backoff. Returns the
+/// ETag.
+async fn put_with_retry(
+    client: reqwest::Client,
+    bucket: Bucket,
+    key: String,
+    part: Option<(u32, String)>,
+    data: Bytes,
+    progress: Option<UploadProgress>,
+) -> Result<String, String> {
+    let prefix = part
+        .as_ref()
+        .map(|(number, _)| format!("part {number}: "))
+        .unwrap_or_default();
+    let mut attempt = 1;
+    loop {
+        // signed afresh each time: the previous URL may have expired
+        let queries = part.as_ref().map(|(number, upload_id)| {
+            HashMap::from([
+                ("partNumber".to_string(), number.to_string()),
+                ("uploadId".to_string(), upload_id.clone()),
+            ])
+        });
+        let url = bucket
+            .presign_put(&key, PRESIGN_SECS, None, queries)
+            .await
+            .map_err(|e| format!("{prefix}cannot sign request: {}", error_chain(&e)))?;
+        let sent = Arc::new(AtomicU64::new(0));
+        match send_put(&client, &url, data.clone(), progress.clone(), sent.clone()).await {
+            Ok(etag) => return Ok(etag),
+            Err(err) => {
+                if let Some(p) = &progress {
+                    p.take_back(sent.load(Ordering::Relaxed));
+                }
+                if !err.retryable() {
+                    return Err(format!("{prefix}{err}"));
+                }
+                if attempt >= PUT_ATTEMPTS {
+                    return Err(format!(
+                        "{prefix}{err} (gave up after {attempt} attempts)"
+                    ));
+                }
+                tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
+/// Part size for a `len`-byte file: MIN_PART_SIZE unless that would
+/// need more than MAX_PARTS, in which case parts grow (in whole MiB).
+fn part_size_for(len: u64) -> u64 {
+    const MIB: u64 = 1024 * 1024;
+    let needed = len.div_ceil(MAX_PARTS).div_ceil(MIB) * MIB;
+    needed.max(MIN_PART_SIZE)
+}
+
+/// Read up to `size` bytes; shorter only at end of file.
+async fn read_part(file: &mut tokio::fs::File, size: usize) -> Result<Bytes, String> {
+    let mut buf = vec![0u8; size];
+    let mut filled = 0;
+    while filled < size {
+        let n = file
+            .read(&mut buf[filled..])
+            .await
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+    }
+    buf.truncate(filled);
+    Ok(Bytes::from(buf))
+}
+
+/// Put the file at `local_path` into the bucket as `key`.
+///
+/// rust-s3's own streaming put fans a big file out into as many as 100
+/// parts at once, each under a hard 60-second limit and with no retry;
+/// on a slow link none of them finish in time and the whole upload
+/// dies. This one keeps PARALLEL_PARTS in flight, retries each part with
+/// backoff, only gives up on a request that has stopped moving bytes,
+/// and aborts the multipart upload on failure so no orphaned parts are
+/// left behind (they are billable). Parts go out as presigned PUTs so
+/// the body can stream and `progress` can follow the network, not the
+/// disk.
+pub async fn upload_file(
+    bucket: &Bucket,
+    local_path: &Path,
+    key: &str,
+    progress: Option<UploadProgress>,
+) -> Result<u64, String> {
+    let meta = tokio::fs::metadata(local_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    if meta.is_dir() {
+        return Err("directories cannot be uploaded — drop files instead".into());
+    }
+    let len = meta.len();
+    let client = upload_client()?;
+    let mut file = tokio::fs::File::open(local_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let part_size = part_size_for(len);
+
+    if len <= part_size {
+        let data = read_part(&mut file, len as usize).await?;
+        put_with_retry(
+            client,
+            bucket.clone(),
+            key.to_string(),
+            None,
+            data,
+            progress.clone(),
+        )
+        .await?;
+        if let Some(p) = &progress {
+            p.finish();
+        }
+        return Ok(len);
+    }
+
+    let started = bucket
+        .initiate_multipart_upload(key, "application/octet-stream")
+        .await
+        .map_err(|e| format!("cannot start multipart upload: {}", error_chain(&e)))?;
+    let upload_id = started.upload_id;
+    let parts = match upload_parts(
+        bucket,
+        &client,
+        &mut file,
+        key,
+        &upload_id,
+        part_size,
+        progress.clone(),
+    )
+    .await
+    {
+        Ok(parts) => parts,
+        Err(e) => {
+            let _ = bucket.abort_upload(key, &upload_id).await;
+            return Err(e);
+        }
+    };
+    match complete_upload(bucket, key, &upload_id, parts).await {
+        Ok(()) => {
+            if let Some(p) = &progress {
+                p.finish();
+            }
+            Ok(len)
+        }
+        Err(e) => {
+            let _ = bucket.abort_upload(key, &upload_id).await;
+            Err(e)
+        }
+    }
+}
+
+/// Read the file part by part and PUT them PARALLEL_PARTS at a time.
+/// Returns the parts in number order. Bailing out drops the JoinSet,
+/// which cancels whatever is still in flight.
+async fn upload_parts(
+    bucket: &Bucket,
+    client: &reqwest::Client,
+    file: &mut tokio::fs::File,
+    key: &str,
+    upload_id: &str,
+    part_size: u64,
+    progress: Option<UploadProgress>,
+) -> Result<Vec<Part>, String> {
+    let mut tasks: JoinSet<Result<Part, String>> = JoinSet::new();
+    let mut parts = Vec::new();
+    let mut next_number = 1u32;
+    let mut at_eof = false;
+    while !at_eof || !tasks.is_empty() {
+        while !at_eof && tasks.len() < PARALLEL_PARTS {
+            let data = read_part(file, part_size as usize).await?;
+            if data.is_empty() {
+                at_eof = true;
+                break;
+            }
+            at_eof = (data.len() as u64) < part_size;
+            let number = next_number;
+            next_number += 1;
+            let put = put_with_retry(
+                client.clone(),
+                bucket.clone(),
+                key.to_string(),
+                Some((number, upload_id.to_string())),
+                data,
+                progress.clone(),
+            );
+            tasks.spawn(async move {
+                put.await.map(|etag| Part {
+                    part_number: number,
+                    etag,
+                })
+            });
+        }
+        if let Some(joined) = tasks.join_next().await {
+            let part = joined.map_err(|e| format!("upload task failed: {e}"))??;
+            parts.push(part);
+        }
+    }
+    parts.sort_by_key(|p| p.part_number);
+    Ok(parts)
+}
+
+/// Tell S3 the parts are all there. A 200 can still carry an error
+/// body (S3 starts answering before it has finished assembling), so the
+/// body is checked too.
+async fn complete_upload(
+    bucket: &Bucket,
+    key: &str,
+    upload_id: &str,
+    parts: Vec<Part>,
+) -> Result<(), String> {
+    let response = bucket
+        .complete_multipart_upload(key, upload_id, parts)
+        .await
+        .map_err(|e| format!("cannot complete multipart upload: {}", error_chain(&e)))?;
+    let status = response.status_code();
+    let body = response.as_str().unwrap_or_default();
+    if status >= 300 || body.contains("<Error>") {
+        let detail = PutError::Status {
+            status,
+            code: xml_text(body, "Code"),
+            message: xml_text(body, "Message"),
+        };
+        return Err(format!("cannot complete multipart upload: {detail}"));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn s3_upload(
     app: AppHandle,
@@ -426,19 +883,8 @@ pub async fn s3_upload(
     let meta = tokio::fs::metadata(&local_path)
         .await
         .map_err(|e| e.to_string())?;
-    if meta.is_dir() {
-        return Err("directories cannot be uploaded — drop files instead".into());
-    }
-    let file = tokio::fs::File::open(&local_path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut reader = Counting::new(file, app.clone(), transfer_id.clone(), meta.len());
-    bucket
-        .put_object_stream(&mut reader, &key)
-        .await
-        .map_err(|e| e.to_string())?;
-    emit_progress(&app, &transfer_id, meta.len(), meta.len());
-    Ok(meta.len())
+    let progress = UploadProgress::new(app, transfer_id, meta.len());
+    upload_file(&bucket, Path::new(&local_path), &key, Some(progress)).await
 }
 
 #[tauri::command]
@@ -465,7 +911,7 @@ pub async fn s3_download(
     bucket
         .get_object_to_writer(&key, &mut writer)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| error_chain(&e))?;
     let done = writer.done;
     emit_progress(&app, &transfer_id, done, done);
     Ok(done)
@@ -614,16 +1060,7 @@ pub async fn s3_archive(
     };
 
     let key = format!("{dest_prefix}{archive}.tar.gz");
-    let upload = async {
-        let mut file = tokio::fs::File::open(&packed)
-            .await
-            .map_err(|e| e.to_string())?;
-        b.put_object_stream(&mut file, &key)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
-    }
-    .await;
+    let upload = upload_file(&b, &packed, &key, None).await;
     let _ = std::fs::remove_dir_all(&work);
     upload?;
     Ok(key)
@@ -793,11 +1230,7 @@ pub async fn s3_sync(
             },
         );
         let local_path = local_root.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let mut file = tokio::fs::File::open(&local_path)
-            .await
-            .map_err(|e| e.to_string())?;
-        bucket
-            .put_object_stream(&mut file, format!("{prefix}{rel}"))
+        upload_file(&bucket, &local_path, &format!("{prefix}{rel}"), None)
             .await
             .map_err(|e| format!("{rel}: {e}"))?;
     }
@@ -908,14 +1341,9 @@ pub async fn s3_edit(
             while let Ok(Some(_)) =
                 tokio::time::timeout(std::time::Duration::from_millis(400), rx.recv()).await
             {}
-            let result = match tokio::fs::File::open(&local_path).await {
-                Ok(mut file) => bucket_handle
-                    .put_object_stream(&mut file, &key)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            };
+            let result = upload_file(&bucket_handle, &local_path, &key, None)
+                .await
+                .map(|_| ());
             let (event, message) = match result {
                 Ok(()) => ("s3-edit-uploaded", None),
                 Err(e) => ("s3-edit-error", Some(e)),
@@ -959,6 +1387,62 @@ mod tests {
         // a prefix match must not count: "datastore." is not "data."
         assert!(!endpoint_names_bucket("https://datastore.example.net", "data"));
         assert!(!endpoint_names_bucket("", "data"));
+    }
+
+    #[test]
+    fn part_size_grows_only_for_huge_files() {
+        let mib = 1024 * 1024;
+        assert_eq!(part_size_for(0), MIN_PART_SIZE);
+        assert_eq!(part_size_for(100 * mib), MIN_PART_SIZE);
+        // 80,000 MiB / 10,000 parts = 8 MiB exactly: still the floor
+        assert_eq!(part_size_for(MAX_PARTS * MIN_PART_SIZE), MIN_PART_SIZE);
+        // one byte more needs bigger parts, rounded up to a whole MiB
+        assert_eq!(part_size_for(MAX_PARTS * MIN_PART_SIZE + 1), 9 * mib);
+        let huge = 123_456 * mib;
+        let size = part_size_for(huge);
+        assert!(huge.div_ceil(size) <= MAX_PARTS);
+        assert_eq!(size % mib, 0);
+    }
+
+    #[test]
+    fn only_service_side_failures_are_retried() {
+        let status = |status, code: &str| PutError::Status {
+            status,
+            code: code.to_string(),
+            message: String::new(),
+        };
+        assert!(PutError::Transport("reset".into()).retryable());
+        assert!(PutError::Stalled.retryable());
+        assert!(status(500, "InternalError").retryable());
+        assert!(status(503, "SlowDown").retryable());
+        assert!(status(400, "RequestTimeout").retryable());
+        assert!(status(429, "").retryable());
+        // a bad signature or a vanished upload will not fix itself
+        assert!(!status(403, "SignatureDoesNotMatch").retryable());
+        assert!(!status(404, "NoSuchUpload").retryable());
+        assert!(!status(400, "InvalidPart").retryable());
+    }
+
+    #[test]
+    fn xml_text_pulls_out_s3_error_fields() {
+        let body = "<?xml version=\"1.0\"?><Error><Code>NoSuchUpload</Code>\
+                    <Message> The specified upload does not exist. </Message></Error>";
+        assert_eq!(xml_text(body, "Code"), "NoSuchUpload");
+        assert_eq!(
+            xml_text(body, "Message"),
+            "The specified upload does not exist."
+        );
+        assert_eq!(xml_text(body, "RequestId"), "");
+        assert_eq!(xml_text("", "Code"), "");
+        assert_eq!(
+            PutError::Status {
+                status: 404,
+                code: "NoSuchUpload".into(),
+                message: "gone".into()
+            }
+            .to_string(),
+            "HTTP 404 NoSuchUpload: gone"
+        );
     }
 
     #[test]

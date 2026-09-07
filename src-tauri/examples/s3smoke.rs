@@ -2,7 +2,7 @@
 //! `cargo run --example s3smoke -- <port>`. Exercises build_bucket,
 //! list_dir with delimiter, put/get round-trip, rename, and delete.
 
-use remotepal_lib::s3::{build_bucket, list_dir, S3Storage};
+use remotepal_lib::s3::{build_bucket, list_dir, upload_file, S3Storage};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -116,5 +116,59 @@ async fn main() {
         "odd presigned url: {url}"
     );
 
+    // uploads: a small file goes up in one PUT, a big one in parts, and
+    // an empty one must not trip over a zero-length body
+    let work =
+        std::env::temp_dir().join(format!("remotepal-s3smoke-{}", std::process::id()));
+    std::fs::create_dir_all(&work).expect("temp dir");
+    let big = work.join("big.bin");
+    let big_bytes = pseudo_random(20 * 1024 * 1024 + 12_345);
+    std::fs::write(&big, &big_bytes).expect("write big");
+    let small = work.join("small.txt");
+    std::fs::write(&small, b"just a few bytes").expect("write small");
+    let empty = work.join("empty.bin");
+    std::fs::write(&empty, b"").expect("write empty");
+
+    let n = upload_file(&bucket, &big, "up/big.bin", None)
+        .await
+        .expect("multipart upload");
+    assert_eq!(n, big_bytes.len() as u64);
+    let got = bucket.get_object("up/big.bin").await.expect("get big");
+    assert_eq!(got.bytes().len(), big_bytes.len(), "big object size");
+    assert!(
+        got.bytes().as_ref() == big_bytes.as_slice(),
+        "big object content"
+    );
+
+    upload_file(&bucket, &small, "up/small.txt", None)
+        .await
+        .expect("small upload");
+    let got = bucket.get_object("up/small.txt").await.expect("get small");
+    assert_eq!(got.bytes().as_ref(), b"just a few bytes");
+
+    upload_file(&bucket, &empty, "up/empty.bin", None)
+        .await
+        .expect("empty upload");
+    let got = bucket.get_object("up/empty.bin").await.expect("get empty");
+    assert!(got.bytes().is_empty());
+
+    let missing = upload_file(&bucket, &work.join("nope.bin"), "up/nope", None).await;
+    assert!(missing.is_err(), "missing file must fail");
+    let _ = std::fs::remove_dir_all(&work);
+
     println!("S3 SMOKE OK");
+}
+
+/// Deterministic noise so the multipart round-trip checks real content,
+/// not zeros.
+fn pseudo_random(len: usize) -> Vec<u8> {
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 24) as u8
+        })
+        .collect()
 }
